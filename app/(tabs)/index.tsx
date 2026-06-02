@@ -1,98 +1,225 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert } from 'react-native';
+import { useRouter } from 'expo-router';
+import { useLibrary } from '../../context/LibraryContext';
+import { useTheme } from '../../context/ThemeContext';
+import BookCard from '../../components/BookCard';
+import * as DocumentPicker from 'expo-document-picker';
+import { fileHandler, Book } from '../../utils/storage';
 
-import { HelloWave } from '@/components/hello-wave';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Link } from 'expo-router';
+export default function LibraryScreen() {
+  const router = useRouter();
+  const { books, loading, addBook, toggleFavorite } = useLibrary();
+  const { colors, theme, toggleTheme } = useTheme();
+  const [filter, setFilter] = useState<'all' | 'favorites'>('all');
 
-export default function HomeScreen() {
+  const handleImportBook = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: 'application/epub+zip',
+        copyToCacheDirectory: true,
+      });
+
+      if (result.canceled || !result.assets || result.assets.length === 0) {
+        return;
+      }
+
+      const file = result.assets[0];
+      const filename = `${Date.now()}_${file.name}`;
+      const savedPath = await fileHandler.saveBook(file.uri, filename);
+
+      // Crear objeto libro básico (en producción, extraer metadatos reales del EPUB)
+      const newBook: Book = {
+        id: Date.now().toString(),
+        title: file.name.replace('.epub', ''),
+        author: 'Autor desconocido',
+        filePath: savedPath,
+        importDate: new Date().toISOString(),
+        progress: 0,
+        currentChapter: 0,
+        isFavorite: false,
+        totalChapters: 1,
+      };
+
+      await addBook(newBook);
+      
+      Alert.alert('Éxito', 'Libro importado correctamente');
+    } catch (error) {
+      console.error('Error importing book:', error);
+      Alert.alert('Error', 'No se pudo importar el libro');
+    }
+  };
+
+  const filteredBooks = filter === 'all' 
+    ? books 
+    : books.filter(book => book.isFavorite);
+
+  const renderEmpty = () => (
+    <View style={[styles.empty, { backgroundColor: colors.card }]}>
+      <Text style={[styles.emptyTitle, { color: colors.text }]}>
+        {books.length === 0 ? 'Tu biblioteca está vacía' : 'No hay favoritos'}
+      </Text>
+      <Text style={[styles.emptyText, { color: colors.secondaryText }]}>
+        {books.length === 0 
+          ? 'Importa tu primer libro EPUB para comenzar' 
+          : 'Marca libros como favoritos para verlos aquí'}
+      </Text>
+      {books.length === 0 && (
+        <TouchableOpacity style={[styles.importButton, { backgroundColor: colors.primary }]} onPress={handleImportBook}>
+          <Text style={styles.importButtonText}>Importar libro</Text>
+        </TouchableOpacity>
+      )}
+    </View>
+  );
+
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <Link href="/modal">
-          <Link.Trigger>
-            <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-          </Link.Trigger>
-          <Link.Preview />
-          <Link.Menu>
-            <Link.MenuAction title="Action" icon="cube" onPress={() => alert('Action pressed')} />
-            <Link.MenuAction
-              title="Share"
-              icon="square.and.arrow.up"
-              onPress={() => alert('Share pressed')}
-            />
-            <Link.Menu title="More" icon="ellipsis">
-              <Link.MenuAction
-                title="Delete"
-                icon="trash"
-                destructive
-                onPress={() => alert('Delete pressed')}
-              />
-            </Link.Menu>
-          </Link.Menu>
-        </Link>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <View style={styles.header}>
+        <Text style={[styles.title, { color: colors.text }]}>Mi Biblioteca</Text>
+        <View style={styles.headerActions}>
+          <TouchableOpacity onPress={toggleTheme} style={styles.themeButton}>
+            <Text style={styles.themeIcon}>{theme === 'light' ? '🌙' : '☀️'}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            onPress={handleImportBook} 
+            style={[styles.importButtonSmall, { backgroundColor: colors.primary }]}
+          >
+            <Text style={styles.importIcon}>+</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
 
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+      <View style={styles.filterContainer}>
+        <TouchableOpacity
+          style={[styles.filterButton, filter === 'all' && { backgroundColor: colors.primary }]}
+          onPress={() => setFilter('all')}
+        >
+          <Text style={[styles.filterText, { color: filter === 'all' ? '#FFFFFF' : colors.text }]}>
+            Todos
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.filterButton, filter === 'favorites' && { backgroundColor: colors.primary }]}
+          onPress={() => setFilter('favorites')}
+        >
+          <Text style={[styles.filterText, { color: filter === 'favorites' ? '#FFFFFF' : colors.text }]}>
+            ❤️ Favoritos
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {loading ? (
+        <View style={styles.loading}>
+          <Text style={{ color: colors.text }}>Cargando...</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={filteredBooks}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => (
+            <BookCard
+              book={item}
+              onPress={() => router.push(`/app/reader?id=${item.id}`)}
+              onFavoritePress={() => toggleFavorite(item.id)}
+            />
+          )}
+          ListEmptyComponent={renderEmpty}
+          contentContainerStyle={filteredBooks.length === 0 && styles.emptyList}
+        />
+      )}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  titleContainer: {
+  container: {
+    flex: 1,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    paddingTop: 50,
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: 'bold',
+  },
+  headerActions: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 12,
+  },
+  themeButton: {
+    padding: 8,
+  },
+  themeIcon: {
+    fontSize: 24,
+  },
+  importButtonSmall: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  importIcon: {
+    fontSize: 24,
+    color: '#FFFFFF',
+    fontWeight: 'bold',
+  },
+  filterContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    marginBottom: 16,
     gap: 8,
   },
-  stepContainer: {
-    gap: 8,
+  filterButton: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  filterText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  loading: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  empty: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 32,
+    marginHorizontal: 32,
+    borderRadius: 16,
+  },
+  emptyTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
     marginBottom: 8,
+    textAlign: 'center',
   },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
+  emptyText: {
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  importButton: {
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 24,
+  },
+  importButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  emptyList: {
+    flexGrow: 1,
   },
 });

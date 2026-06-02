@@ -16,47 +16,37 @@ __pycache__/
 # Environment variables
 .env
 .env.local
-*.env.*
+.env.*
 
-# IDE specific
+# IDE files
 .vscode/
 .idea/
 *.swp
 *.swo
 
-# OS generated
-.DS_Store
-Thumbs.db
-
 # Logs
 *.log
 
-# Coverage
+# Temp files
+*.tmp
+
+# Coverage reports
 coverage/
 htmlcov/
 .coverage
 
-# Temporary files
-*.tmp
-*.temp
+# MyPy cache
+.mypy_cache/
 
-# Compressed files
-*.zip
-*.gz
+# Pytest cache
+.pytest_cache/
+
+# Distribution / packaging
 *.tar
-*.tgz
-*.bz2
-*.xz
-*.7z
-*.rar
-*.zst
-*.lz4
-*.lzh
-*.cab
-*.arj
-*.rpm
-*.deb
-*.Z
-*.lz
-*.lzo
+*.tar.gz
+*.zip
+
+# System files
+.DS_Store
+Thumbs.db
 ```
