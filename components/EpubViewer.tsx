@@ -9,6 +9,7 @@ export interface EpubViewerRef {
   nextPage: () => void;
   prevPage: () => void;
   goToChapter: (href: string) => void;
+  goToPercentage: (percentage: number) => void;
 }
 
 interface EpubViewerProps {
@@ -44,7 +45,16 @@ const EpubViewer = forwardRef<EpubViewerRef, EpubViewerProps>(({
     },
     goToChapter(href) {
       webViewRef.current?.injectJavaScript(`window.goToChapter("${href}"); true;`);
-    }
+    },
+    goToPercentage(percentage) { // <- Agrega este bloque
+    webViewRef.current?.injectJavaScript(`
+      if (rendition && book && book.locations) {
+        const cfi = book.locations.cfiFromPercentage(${percentage});
+        if (cfi) rendition.display(cfi);
+      }
+      true;
+    `);
+  }
   }));
 
   // Listen for font size changes
@@ -150,13 +160,25 @@ const EpubViewer = forwardRef<EpubViewerRef, EpubViewerProps>(({
 
           return book.loaded.navigation;
         }).then((navigation) => {
+          // FUNCIÓN CORREGIDA: Mapea recursivamente las partes y sus subcapítulos
+          function mapNavigationTree(items) {
+            if (!items) return undefined;
+            return items.map(chap => {
+              const mapped = {
+                label: chap.label ? chap.label.trim() : 'Capítulo',
+                href: chap.href
+              };
+              if (chap.subitems && chap.subitems.length > 0) {
+                mapped.subitems = mapNavigationTree(chap.subitems);
+              }
+              return mapped;
+            });
+          }
+
           chapters = navigation.toc;
           window.ReactNativeWebView.postMessage(JSON.stringify({
             type: 'navigation',
-            toc: chapters.map(chap => ({
-              label: chap.label ? chap.label.trim() : 'Capítulo',
-              href: chap.href
-            }))
+            toc: mapNavigationTree(chapters)
           }));
 
           return book.locations.generate(1500);
@@ -174,11 +196,27 @@ const EpubViewer = forwardRef<EpubViewerRef, EpubViewerProps>(({
 
         rendition.hooks.content.register((content) => {
           const doc = content.document;
+          
+          // 1. Inyectamos los estilos base de fondo y texto
           const style = doc.createElement("style");
           const bg = currentTheme === 'dark' ? '#121212' : '#ffffff';
           const text = currentTheme === 'dark' ? '#B0B0B0' : '#1A1A1A';
           style.innerHTML = 'html, body { background-color: ' + bg + ' !important; color: ' + text + ' !important; }';
           doc.head.appendChild(style);
+
+          // 2. DETECTOR DE ENLACES REALES:
+          // Filtramos todos los <a> del documento
+          const links = doc.querySelectorAll('a');
+          links.forEach(link => {
+            const href = link.getAttribute('href');
+            
+            // Si tiene un href válido, no está vacío, no es solo un '#' 
+            // y además el texto interno no es exageradamente largo (menos de 60 caracteres)
+            if (href && href !== '#' && href.trim() !== '' && link.textContent.trim().length < 60) {
+              // Es un enlace real (nota al pie, índice, etc.) -> Le añadimos una clase CSS
+              link.classList.add('enlace-real');
+            }
+          });
         });
 
         rendition.themes.register('dark', {
@@ -192,7 +230,14 @@ const EpubViewer = forwardRef<EpubViewerRef, EpubViewerProps>(({
           'p': { 'color': '#B0B0B0 !important' },
           'span': { 'color': '#B0B0B0 !important' },
           'div': { 'color': '#B0B0B0 !important' },
-          'a': { 'color': '#64B5F6 !important' },
+          'a': { 
+            'color': 'inherit !important', 
+            'text-decoration': 'none !important' 
+          },
+          '.enlace-real': { 
+            'color': '#64B5F6 !important', 
+            'text-decoration': 'underline !important' 
+          },
           'h1': { 'color': '#FFFFFF !important' },
           'h2': { 'color': '#FFFFFF !important' },
           'h3': { 'color': '#FFFFFF !important' },
@@ -212,7 +257,14 @@ const EpubViewer = forwardRef<EpubViewerRef, EpubViewerProps>(({
           'p': { 'color': '#1A1A1A !important' },
           'span': { 'color': '#1A1A1A !important' },
           'div': { 'color': '#1A1A1A !important' },
-          'a': { 'color': '#2196F3 !important' },
+          'a': { 
+              'color': 'inherit !important', 
+              'text-decoration': 'none !important' 
+            },
+            '.enlace-real': { 
+              'color': '#2196F3 !important', 
+              'text-decoration': 'underline !important' 
+            },
           'h1': { 'color': '#1A1A1A !important' },
           'h2': { 'color': '#1A1A1A !important' },
           'h3': { 'color': '#1A1A1A !important' }
@@ -228,7 +280,7 @@ const EpubViewer = forwardRef<EpubViewerRef, EpubViewerProps>(({
 
         rendition.on("relocated", (location) => {
           triggerRelocated(location);
-          isAnimating = false; // Liberación limpia y segura de la bandera
+          isAnimating = false; 
         });
 
         rendition.on("click", (event) => {
@@ -274,42 +326,31 @@ const EpubViewer = forwardRef<EpubViewerRef, EpubViewerProps>(({
           const threshold = pageWidth * 0.25;
           
           if (diffX < -threshold || (diffX < -45 && diffTime < 300)) {
-            // Avanzar página
             isAnimating = true;
-            
-            // 1. Desplazamos de forma fluida el texto hacia la izquierda
             iframeBody.style.transition = 'transform 0.2s ease-out';
             iframeBody.style.transform = 'translateX(-' + pageWidth + 'px)';
             
-            // 2. Esperamos a que la animación visual termine
             setTimeout(() => {
-              // 3. Reseteamos el transform al centro ANTES del cambio de página
               iframeBody.style.transition = 'none';
               iframeBody.style.transform = 'translateX(0)';
-              
-              // 4. Sincronizamos la base de datos de epub.js
               rendition.next().catch(() => {
                 isAnimating = false;
               });
             }, 200);
 
           } else if (diffX > threshold || (diffX > 45 && diffTime < 300)) {
-            // Retroceder página
             isAnimating = true;
-            
             iframeBody.style.transition = 'transform 0.2s ease-out';
             iframeBody.style.transform = 'translateX(' + pageWidth + 'px)';
             
             setTimeout(() => {
               iframeBody.style.transition = 'none';
               iframeBody.style.transform = 'translateX(0)';
-              
               rendition.prev().catch(() => {
                 isAnimating = false;
               });
             }, 200);
           } else {
-            // Cancelar swipe y regresar con fluidez al centro
             iframeBody.style.transition = 'transform 0.2s ease-out';
             iframeBody.style.transform = 'translateX(0)';
           }
@@ -443,7 +484,7 @@ const EpubViewer = forwardRef<EpubViewerRef, EpubViewerProps>(({
   </script>
 </body>
 </html>
-  `;
+`;
 
   const handleMessage = async (event: any) => {
     try {

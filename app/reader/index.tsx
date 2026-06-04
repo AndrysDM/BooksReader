@@ -1,22 +1,23 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { View, StyleSheet, TouchableOpacity, Modal, FlatList, Text, Alert, Platform, StatusBar } from 'react-native';
+import Slider from '@react-native-community/slider';
+import * as NavigationBar from 'expo-navigation-bar';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import React, { useEffect, useRef, useState } from 'react';
+import { Alert, FlatList, Modal, Platform, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import EpubViewer, { EpubViewerRef } from '../../components/EpubViewer';
 import { useLibrary } from '../../context/LibraryContext';
 import { useTheme } from '../../context/ThemeContext';
-import EpubViewer, { EpubViewerRef } from '../../components/EpubViewer';
-import * as NavigationBar from 'expo-navigation-bar';
 
 export default function ReaderScreen() {
   const params = useLocalSearchParams();
   const router = useRouter();
   const { books, updateProgress, deleteBook, updateBook } = useLibrary();
   const { colors, theme, toggleTheme, fontSize, setFontSize } = useTheme();
-  
+
   const [showSettings, setShowSettings] = useState(false);
   const [showChapters, setShowChapters] = useState(false);
-  const [chapters, setChapters] = useState<Array<{ label: string; href: string }>>([]);
+  const [chapters, setChapters] = useState<{ label: string; href: string }[]>([]);
   const [showControls, setShowControls] = useState(false);
-  
+
   // Progress states
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [totalPages, setTotalPages] = useState<number>(1);
@@ -48,7 +49,7 @@ export default function ReaderScreen() {
     };
 
     toggleSystemUI();
-    
+
     // Restore UI when leaving reader screen
     return () => {
       StatusBar.setHidden(false);
@@ -76,13 +77,13 @@ export default function ReaderScreen() {
     await updateProgress(book.id, progress, chapter, cfi);
   };
 
-  const handlePrevPage = () => {
-    epubViewerRef.current?.prevPage();
-  };
+  // const handlePrevPage = () => {
+  //   epubViewerRef.current?.prevPage();
+  // };
 
-  const handleNextPage = () => {
-    epubViewerRef.current?.nextPage();
-  };
+  // const handleNextPage = () => {
+  //   epubViewerRef.current?.nextPage();
+  // };
 
   const handleGoToChapter = (href: string) => {
     epubViewerRef.current?.goToChapter(href);
@@ -105,8 +106,8 @@ export default function ReaderScreen() {
       '¿Estás seguro de que quieres eliminar este libro?',
       [
         { text: 'Cancelar', style: 'cancel' },
-        { 
-          text: 'Eliminar', 
+        {
+          text: 'Eliminar',
           style: 'destructive',
           onPress: async () => {
             await deleteBook(book.id);
@@ -116,6 +117,28 @@ export default function ReaderScreen() {
       ]
     );
   };
+
+  // Función para convertir la estructura de árbol en una lista plana fácil de leer por FlatList
+  const flattenChapters = (navItems: any[], level = 0): any[] => {
+  if (!navItems || !Array.isArray(navItems)) return [];
+  
+  let flatList: any[] = [];
+  
+  navItems.forEach((item) => {
+    flatList.push({
+      label: item.label,
+      href: item.href,
+      level: level
+    });
+    
+    // Verificamos de forma segura si tiene subcapítulos
+    if (item.subitems && Array.isArray(item.subitems) && item.subitems.length > 0) {
+      flatList = flatList.concat(flattenChapters(item.subitems, level + 1));
+    }
+  });
+  
+  return flatList;
+};
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -137,11 +160,11 @@ export default function ReaderScreen() {
           <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
             <Text style={[styles.headerButtonText, { color: colors.text }]}>← Volver</Text>
           </TouchableOpacity>
-          
+
           <Text style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1}>
             {book.title}
           </Text>
-          
+
           <View style={styles.headerActions}>
             <TouchableOpacity onPress={() => setShowSettings(true)} style={styles.headerButton}>
               <Text style={[styles.headerButtonText, { color: colors.text }]}>⚙️</Text>
@@ -153,40 +176,58 @@ export default function ReaderScreen() {
         </View>
       )}
 
-      {/* Progress Information Panel (Float Overlay above bottom bar) */}
+      {/* Panel Inferior Unificado de Progreso y Navegación (Ancho completo) */}
       {showControls && (
-        <View style={[styles.progressOverlay, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Text style={[styles.progressChapterText, { color: colors.text }]} numberOfLines={1}>
-            {chapterTitle}
-          </Text>
-          <View style={styles.progressStatsRow}>
-            <Text style={[styles.progressStatText, { color: colors.secondaryText }]}>
-              Pág. {currentPage} de {totalPages}
+        <View style={[styles.unifiedBottomPanel, { backgroundColor: colors.card, borderTopColor: colors.border }]}>
+
+          {/* Fila Superior: Título del Capítulo, Páginas y Porcentaje */}
+          <View style={styles.progressHeaderRow}>
+            <Text style={[styles.progressChapterText, { color: colors.text }]} numberOfLines={1}>
+              {chapterTitle}
             </Text>
-            <Text style={[styles.progressStatText, { color: colors.secondaryText }]}>
-              {currentProgress}% completado
-            </Text>
+            <View style={styles.progressStatsRight}>
+              <Text style={[styles.progressStatText, { color: colors.secondaryText }]}>
+                Pág. {currentPage}/{totalPages}
+              </Text>
+              <Text style={[styles.progressStatText, { color: colors.secondaryText, marginLeft: 8 }]}>
+                ({currentProgress}%)
+              </Text>
+            </View>
           </View>
+
+          {/* Fila Central: Barra Deslizante Interactiva (Slider) */}
+          <View style={styles.sliderContainer}>
+            <Slider
+              style={styles.pageSlider}
+              minimumValue={1}
+              maximumValue={totalPages > 0 ? totalPages : 100}
+              step={1}
+              value={currentPage}
+              minimumTrackTintColor={colors.primary}
+              maximumTrackTintColor={colors.border}
+              thumbTintColor={colors.primary}
+              onSlidingComplete={(value) => {
+                if (totalPages > 1) {
+                  const targetPercentage = (value - 1) / (totalPages - 1);
+                  epubViewerRef.current?.goToPercentage?.(targetPercentage);
+                } else {
+                  epubViewerRef.current?.goToPercentage?.(0);
+                }
+              }}
+            />
+          </View>
+
+          {/* Fila Inferior: Solo el botón de Capítulos centrado */}
+          <View style={styles.bottomBarButtonsRow}>
+            <TouchableOpacity onPress={() => setShowChapters(true)} style={styles.centerChaptersButton}>
+              <Text style={[styles.bottomBarButtonText, { color: colors.text }]}>📑 Capítulos</Text>
+            </TouchableOpacity>
+          </View>
+
         </View>
       )}
 
-      {/* Bottom Navigation Bar (Slide/Overlay from Bottom) */}
-      {showControls && (
-        <View style={[styles.bottomBar, { backgroundColor: colors.card, borderTopColor: colors.border }]}>
-          <TouchableOpacity onPress={handlePrevPage} style={styles.bottomBarButton}>
-            <Text style={[styles.bottomBarButtonText, { color: colors.text }]}>◀ Anterior</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity onPress={() => setShowChapters(true)} style={styles.bottomBarButton}>
-            <Text style={[styles.bottomBarButtonText, { color: colors.text }]}>📑 Capítulos</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity onPress={handleNextPage} style={styles.bottomBarButton}>
-            <Text style={[styles.bottomBarButtonText, { color: colors.text }]}>Siguiente ▶</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
+      {/* Chapters Modal */}
       {/* Chapters Modal */}
       <Modal
         visible={showChapters}
@@ -204,18 +245,35 @@ export default function ReaderScreen() {
             </View>
 
             <FlatList
-              data={chapters}
+              // Planeamos el árbol de capítulos dinámicamente aquí
+              data={flattenChapters(chapters)}
               keyExtractor={(item, index) => `${item.href}-${index}`}
-              renderItem={({ item }) => (
-                <TouchableOpacity 
-                  style={[styles.chapterItem, { borderBottomColor: colors.border }]}
-                  onPress={() => handleGoToChapter(item.href)}
-                >
-                  <Text style={[styles.chapterLabel, { color: colors.text }]}>
-                    {item.label}
-                  </Text>
-                </TouchableOpacity>
-              )}
+              renderItem={({ item }) => {
+                // Definimos una sangría dinámica según el nivel de anidación (0 para principal, 1 para subcapítulo, etc.)
+                const indentation = (item.level || 0) * 20;
+
+                return (
+                  <TouchableOpacity 
+                    style={[
+                      styles.chapterItem, 
+                      { 
+                        borderBottomColor: colors.border,
+                        paddingLeft: 16 + indentation // Aplica el espacio a la izquierda
+                      }
+                    ]}
+                    onPress={() => handleGoToChapter(item.href)}
+                  >
+                    <Text 
+                      style={[
+                        item.level > 0 ? styles.subChapterLabel : styles.chapterLabel, 
+                        { color: item.level > 0 ? colors.secondaryText : colors.text }
+                      ]}
+                    >
+                      {item.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              }}
               ListEmptyComponent={
                 <Text style={[styles.emptyChaptersText, { color: colors.secondaryText }]}>
                   No se encontraron capítulos o el libro se está cargando.
@@ -245,7 +303,7 @@ export default function ReaderScreen() {
             {/* Theme Toggle */}
             <View style={styles.settingRow}>
               <Text style={[styles.settingLabel, { color: colors.text }]}>Tema</Text>
-              <TouchableOpacity 
+              <TouchableOpacity
                 onPress={toggleTheme}
                 style={[styles.themeToggle, { backgroundColor: colors.primary }]}
               >
@@ -257,14 +315,14 @@ export default function ReaderScreen() {
             <View style={styles.settingRow}>
               <Text style={[styles.settingLabel, { color: colors.text }]}>Tamaño de fuente</Text>
               <View style={styles.fontSizeControls}>
-                <TouchableOpacity 
+                <TouchableOpacity
                   onPress={() => setFontSize(Math.max(12, fontSize - 2))}
                   style={[styles.fontButton, { backgroundColor: colors.border }]}
                 >
                   <Text style={{ fontSize: 18, color: colors.text }}>A-</Text>
                 </TouchableOpacity>
                 <Text style={[styles.fontSizeValue, { color: colors.text }]}>{fontSize}px</Text>
-                <TouchableOpacity 
+                <TouchableOpacity
                   onPress={() => setFontSize(Math.min(32, fontSize + 2))}
                   style={[styles.fontButton, { backgroundColor: colors.border }]}
                 >
@@ -284,7 +342,6 @@ export default function ReaderScreen() {
     </View>
   );
 }
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -318,58 +375,68 @@ const styles = StyleSheet.create({
   headerActions: {
     flexDirection: 'row',
   },
-  bottomBar: {
+  unifiedBottomPanel: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    zIndex: 100,
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'center',
-    paddingVertical: 12,
     borderTopWidth: 1,
-  },
-  bottomBarButton: {
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-  },
-  bottomBarButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  progressOverlay: {
-    position: 'absolute',
-    bottom: 68,
-    left: 16,
-    right: 16,
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 4,
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    // Espacio de seguridad generoso abajo para evitar interferencias con la navegación del móvil
+    paddingBottom: Platform.OS === 'ios' ? 40 : 28,
     zIndex: 100,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 8,
   },
-  progressChapterText: {
-    fontSize: 15,
-    fontWeight: 'bold',
-    marginBottom: 6,
-    textAlign: 'center',
-  },
-  progressStatsRow: {
+  progressHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    width: '100%',
-    paddingHorizontal: 8,
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  progressChapterText: {
+    fontSize: 14,
+    fontWeight: '700',
+    flex: 1,
+    marginRight: 12,
+  },
+  progressStatsRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   progressStatText: {
     fontSize: 13,
-    fontWeight: '500',
+    fontWeight: '600',
+  },
+  sliderContainer: {
+    width: '100%',
+    height: 40,
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  pageSlider: {
+    width: '100%',
+    height: 40,
+  },
+  bottomBarButtonsRow: {
+    flexDirection: 'row',
+    justifyContent: 'center', // Centra el botón horizontalmente
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  centerChaptersButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bottomBarButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
   },
   modalOverlay: {
     flex: 1,
@@ -451,5 +518,9 @@ const styles = StyleSheet.create({
   progressValue: {
     fontSize: 18,
     fontWeight: '600',
+  },
+  subChapterLabel: {
+    fontSize: 14,
+    fontWeight: '400', // Un poco más delgado que el capítulo principal
   },
 });
