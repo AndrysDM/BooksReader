@@ -12,6 +12,7 @@ export interface Book {
   currentChapter: number;
   isFavorite: boolean;
   totalChapters: number;
+  currentCfi?: string;
 }
 
 const BOOKS_KEY = '@biblioo_books';
@@ -71,8 +72,8 @@ export const storage = {
     }
   },
 
-  async updateProgress(id: string, progress: number, chapter: number): Promise<void> {
-    await this.updateBook(id, { progress, currentChapter: chapter });
+  async updateProgress(id: string, progress: number, chapter: number, cfi?: string): Promise<void> {
+    await this.updateBook(id, { progress, currentChapter: chapter, currentCfi: cfi });
   },
 };
 

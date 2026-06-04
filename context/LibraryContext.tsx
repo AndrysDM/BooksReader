@@ -9,7 +9,7 @@ interface LibraryContextType {
   updateBook: (id: string, updates: Partial<Book>) => Promise<void>;
   deleteBook: (id: string) => Promise<void>;
   toggleFavorite: (id: string) => Promise<void>;
-  updateProgress: (id: string, progress: number, chapter: number) => Promise<void>;
+  updateProgress: (id: string, progress: number, chapter: number, cfi?: string) => Promise<void>;
 }
 
 const LibraryContext = createContext<LibraryContextType | undefined>(undefined);
@@ -62,8 +62,8 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     await loadBooks();
   }
 
-  async function updateProgress(id: string, progress: number, chapter: number) {
-    await storage.updateProgress(id, progress, chapter);
+  async function updateProgress(id: string, progress: number, chapter: number, cfi?: string) {
+    await storage.updateProgress(id, progress, chapter, cfi);
     await loadBooks();
   }
 

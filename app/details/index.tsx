@@ -104,7 +104,7 @@ export default function BookDetailScreen() {
         <View style={styles.actionsContainer}>
           <TouchableOpacity 
             style={[styles.actionButton, { backgroundColor: colors.primary }]}
-            onPress={() => router.push(`/app/reader?id=${book.id}`)}
+            onPress={() => router.push(`/reader?id=${book.id}`)}
           >
             <Text style={styles.actionButtonText}>📖 Leer ahora</Text>
           </TouchableOpacity>

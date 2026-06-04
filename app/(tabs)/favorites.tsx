@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, FlatList } from 'react-native';
+import { View, Text, StyleSheet, FlatList, useWindowDimensions } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useLibrary } from '../../context/LibraryContext';
 import { useTheme } from '../../context/ThemeContext';
@@ -9,6 +9,10 @@ export default function FavoritesScreen() {
   const router = useRouter();
   const { books, toggleFavorite } = useLibrary();
   const { colors } = useTheme();
+
+  const { width } = useWindowDimensions();
+  const numColumns = Math.max(2, Math.floor((width - 16) / 120));
+  const itemWidth = (width - 32 - (numColumns - 1) * 16) / numColumns;
 
   const favoriteBooks = books.filter(book => book.isFavorite);
 
@@ -28,17 +32,24 @@ export default function FavoritesScreen() {
       </View>
 
       <FlatList
+        key={numColumns}
         data={favoriteBooks}
+        numColumns={numColumns}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
           <BookCard
             book={item}
-            onPress={() => router.push(`/app/reader?id=${item.id}`)}
+            width={itemWidth}
+            onPress={() => router.push(`/reader?id=${item.id}`)}
             onFavoritePress={() => toggleFavorite(item.id)}
           />
         )}
+        columnWrapperStyle={{ gap: 16 }}
+        contentContainerStyle={[
+          styles.listContainer,
+          favoriteBooks.length === 0 && styles.emptyList
+        ]}
         ListEmptyComponent={renderEmpty}
-        contentContainerStyle={favoriteBooks.length === 0 && styles.emptyList}
       />
     </View>
   );
@@ -76,5 +87,9 @@ const styles = StyleSheet.create({
   },
   emptyList: {
     flexGrow: 1,
+  },
+  listContainer: {
+    paddingHorizontal: 16,
+    paddingBottom: 24,
   },
 });
