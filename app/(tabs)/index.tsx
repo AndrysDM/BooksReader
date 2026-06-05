@@ -1,14 +1,15 @@
+import { ContinueReadingCard } from '@/components/ContinueReadingCard';
+import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
-import { useRouter } from 'expo-router';
-import React, { useRef, useState } from 'react';
+import { readAsStringAsync } from 'expo-file-system/legacy';
+import { useNavigation, useRouter } from 'expo-router'; // Añadido useNavigation
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Modal, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { WebView } from 'react-native-webview';
 import BookCard from '../../components/BookCard';
 import { useLibrary } from '../../context/LibraryContext';
 import { useTheme } from '../../context/ThemeContext';
 import { Book, fileHandler } from '../../utils/storage';
-
-import { readAsStringAsync } from 'expo-file-system/legacy';
 
 const extractorHtml = `
 <!DOCTYPE html>
@@ -86,17 +87,49 @@ const extractorHtml = `
 </html>
 `;
 
+// Variable global en memoria para registrar el último ID abierto en la sesión actual
+let globalLastOpenedBookId: string | null = null;
+
 export default function LibraryScreen() {
   const router = useRouter();
-  const { books, loading, addBook, toggleFavorite } = useLibrary();
-  const { colors, theme, toggleTheme } = useTheme();
+  const navigation = useNavigation(); // Hook para escuchar eventos de navegación
+  const { books, loading, addBook, toggleFavorite, updateBook } = useLibrary();
+  const { colors } = useTheme();
   const [filter, setFilter] = useState<'all' | 'favorites'>('all');
+  const [filterDropdownVisible, setFilterDropdownVisible] = useState(false);
 
-  // Importer and Extractor States
+  // Estado local para forzar el re-renderizado de los hooks useMemo cuando la pantalla gane foco
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  // Estados del importador
   const [importingBook, setImportingBook] = useState<boolean>(false);
   const [tempBookPath, setTempBookPath] = useState<string | null>(null);
   const [tempBookFilename, setTempBookFilename] = useState<string>('');
   const extractorWebViewRef = useRef<WebView>(null);
+
+  // Escucha cuando el usuario regresa a esta pantalla (Focus)
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', () => {
+      // Incrementamos la llave para romper el caché de los useMemo e interfaz
+      setRefreshKey(prev => prev + 1);
+    });
+    return unsubscribe;
+  }, [navigation]);
+
+  // Función para abrir el libro guardando el ID de inmediato
+  const handleOpenBook = async (book: Book) => {
+    globalLastOpenedBookId = book.id; // Guardado síncrono instantáneo
+    try {
+      if (updateBook) {
+        await updateBook(book.id, {
+          lastOpened: new Date().toISOString(),
+        });
+      }
+    } catch (error) {
+      console.error('Error al actualizar la fecha lastOpened:', error);
+    }
+    router.push(`/reader?id=${book.id}`);
+  };
 
   const handleImportBook = async () => {
     try {
@@ -115,7 +148,6 @@ export default function LibraryScreen() {
       const filename = `${Date.now()}_${file.name}`;
       const savedPath = await fileHandler.saveBook(file.uri, filename);
 
-      // Save temp metadata to read inside background extractor webview
       setTempBookFilename(file.name);
       setTempBookPath(savedPath);
     } catch (error) {
@@ -132,7 +164,6 @@ export default function LibraryScreen() {
       if (data.type === 'ready_to_receive') {
         if (tempBookPath) {
           try {
-            // Usamos la función importada de /legacy directamente con el formato 'base64'
             const base64Data = await readAsStringAsync(tempBookPath, {
               encoding: 'base64',
             });
@@ -198,12 +229,40 @@ export default function LibraryScreen() {
   };
 
   const { width } = useWindowDimensions();
-  const numColumns = Math.max(2, Math.floor((width - 16) / 120));
+  const numColumns = Math.max(3, Math.floor((width - 16) / 120));
   const itemWidth = (width - 32 - (numColumns - 1) * 16) / numColumns;
 
-  const filteredBooks = filter === 'all'
-    ? books
-    : books.filter(book => book.isFavorite);
+  // Re-evalúa y rompe referencias viejas de los libros usando la refreshKey
+  const filteredBooks = useMemo(() => {
+    const list = filter === 'all' ? books : books.filter(book => book.isFavorite);
+    return [...list]; // Copia superficial para forzar refresco visual en las tarjetas principales
+  }, [books, filter, refreshKey]);
+
+  // Selección inteligente del libro en lectura activa
+  const currentReadingBook = useMemo(() => {
+    const inProgress = books.filter(book => {
+      const p = Number(book.progress) || 0;
+      // Detecta la escala de forma dinámica: 
+      // Si es menor o igual a 1, el tope es 1 (escala 0-1). Si es mayor, el tope es 100 (escala 0-100)
+      const maxProgress = p <= 1 ? 1 : 100;
+      return p > 0 && p < maxProgress;
+    });
+
+    if (inProgress.length === 0) return null;
+
+    // 1. Prioridad: Si coincide con el ID guardado en memoria en esta sesión
+    if (globalLastOpenedBookId) {
+      const lastBook = inProgress.find(book => book.id === globalLastOpenedBookId);
+      if (lastBook) return lastBook;
+    }
+
+    // 2. Fallback: Ordenar por fecha 'lastOpened'
+    return [...inProgress].sort((a, b) => {
+      const timeA = a.lastOpened ? new Date(a.lastOpened).getTime() : 0;
+      const timeB = b.lastOpened ? new Date(b.lastOpened).getTime() : 0;
+      return timeB - timeA;
+    })[0];
+  }, [books, refreshKey]);
 
   const renderEmpty = () => (
     <View style={[styles.empty, { backgroundColor: colors.card }]}>
@@ -215,86 +274,117 @@ export default function LibraryScreen() {
           ? 'Importa tu primer libro EPUB para comenzar'
           : 'Marca libros como favoritos para verlos aquí'}
       </Text>
-      {books.length === 0 && (
-        <TouchableOpacity style={[styles.importButton, { backgroundColor: colors.primary }]} onPress={handleImportBook}>
-          <Text style={styles.importButtonText}>Importar libro</Text>
-        </TouchableOpacity>
-      )}
     </View>
+  );
+
+
+  const FilterDropdown = () => (
+    <Modal
+      visible={filterDropdownVisible}
+      transparent={true}
+      animationType="fade"
+      onRequestClose={() => setFilterDropdownVisible(false)}
+    >
+      <TouchableOpacity
+        style={styles.dropdownOverlay}
+        activeOpacity={1}
+        onPressOut={() => setFilterDropdownVisible(false)}
+      >
+        <View style={[styles.dropdownContent, { backgroundColor: colors.card }]}>
+          <TouchableOpacity
+            style={styles.dropdownOption}
+            onPress={() => { setFilter('all'); setFilterDropdownVisible(false); }}
+          >
+            <Text style={[styles.dropdownOptionText, { color: colors.text, fontWeight: filter === 'all' ? 'bold' : 'normal' }]}>
+              Todos
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.dropdownOption}
+            onPress={() => { setFilter('favorites'); setFilterDropdownVisible(false); }}
+          >
+            <Text style={[styles.dropdownOptionText, { color: colors.text, fontWeight: filter === 'favorites' ? 'bold' : 'normal' }]}>
+              Favoritos
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </TouchableOpacity>
+    </Modal>
+  );
+
+  const FAB = () => (
+    <TouchableOpacity style={[styles.fab, { backgroundColor: colors.primary }]} onPress={handleImportBook}>
+      <Ionicons name="add" size={30} color="#FFFFFF" />
+    </TouchableOpacity>
   );
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Header */}
+      {/* Header superior */}
       <View style={styles.header}>
-        <Text style={[styles.title, { color: colors.text }]}>Mi Biblioteca</Text>
+        <View style={styles.headerLeft}>
+          <View style={[styles.appIcon, { backgroundColor: colors.primary }]}>
+            <Ionicons name="book" size={22} color="#FFFFFF" />
+          </View>
+          <Text style={[styles.title, { color: colors.text }]}>Biblioteca</Text>
+        </View>
         <View style={styles.headerActions}>
-          <TouchableOpacity onPress={toggleTheme} style={styles.themeButton}>
-            <Text style={styles.themeIcon}>{theme === 'light' ? '🌙' : '☀️'}</Text>
+          <TouchableOpacity style={styles.headerActionButton}>
+            <Ionicons name="search-outline" size={22} color={colors.text} />
           </TouchableOpacity>
-          <TouchableOpacity
-            onPress={handleImportBook}
-            style={[styles.importButtonSmall, { backgroundColor: colors.primary }]}
-          >
-            <Text style={styles.importIcon}>+</Text>
+          <TouchableOpacity style={styles.headerActionButton}>
+            <Ionicons name="settings-outline" size={22} color={colors.text} />
           </TouchableOpacity>
         </View>
       </View>
 
-      {/* Filter Tabs */}
-      <View style={styles.filterContainer}>
-        <TouchableOpacity
-          style={[styles.filterButton, filter === 'all' && { backgroundColor: colors.primary }]}
-          onPress={() => setFilter('all')}
-        >
-          <Text style={[styles.filterText, { color: filter === 'all' ? '#FFFFFF' : colors.text }]}>
-            Todos
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.filterButton, filter === 'favorites' && { backgroundColor: colors.primary }]}
-          onPress={() => setFilter('favorites')}
-        >
-          <Text style={[styles.filterText, { color: filter === 'favorites' ? '#FFFFFF' : colors.text }]}>
-            ❤️ Favoritos
-          </Text>
-        </TouchableOpacity>
-      </View>
+      <FlatList
+        key={numColumns}
+        data={filteredBooks}
+        numColumns={numColumns}
+        keyExtractor={(item) => item.id}
+        ListHeaderComponent={() => (
+          <>
+            {currentReadingBook && (
+              <ContinueReadingCard
+                book={currentReadingBook}
+                colors={colors}
+                onPress={() => handleOpenBook(currentReadingBook)}
+              />
+            )}
 
-      {/* Grid List */}
-      {loading ? (
-        <View style={styles.loading}>
-          <Text style={{ color: colors.text }}>Cargando...</Text>
-        </View>
-      ) : (
-        <FlatList
-          key={numColumns}
-          data={filteredBooks}
-          numColumns={numColumns}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
-            <BookCard
-              book={item}
-              width={itemWidth}
-              onPress={() => router.push(`/reader?id=${item.id}`)}
-              onFavoritePress={() => toggleFavorite(item.id)}
-            />
-          )}
-          columnWrapperStyle={{ gap: 16 }}
-          contentContainerStyle={[
-            styles.listContainer,
-            filteredBooks.length === 0 && styles.emptyList
-          ]}
-          ListEmptyComponent={renderEmpty}
-        />
-      )}
+            <View style={[styles.sectionHeader, { marginTop: currentReadingBook ? 24 : 8 }]}>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>Mis libros</Text>
+              <TouchableOpacity style={styles.filterDropdownButton} onPress={() => setFilterDropdownVisible(true)}>
+                <Text style={[styles.filterDropdownText, { color: colors.secondaryText }]}>
+                  {filter === 'all' ? 'Todos' : 'Favoritos'}
+                </Text>
+                <Ionicons name="chevron-down" size={14} color={colors.secondaryText} style={{ marginTop: 2 }} />
+              </TouchableOpacity>
+            </View>
+          </>
+        )}
+        renderItem={({ item }) => (
+          <BookCard
+            book={item}
+            width={itemWidth}
+            onPress={() => handleOpenBook(item)}
+            onFavoritePress={() => toggleFavorite(item.id)}
+          />
+        )}
+        columnWrapperStyle={{ gap: 16 }}
+        contentContainerStyle={[
+          styles.listContainer,
+          filteredBooks.length === 0 && styles.emptyList
+        ]}
+        ListEmptyComponent={renderEmpty}
+      />
 
-      {/* Importing Loader Modal */}
-      <Modal
-        visible={importingBook}
-        transparent={true}
-        animationType="fade"
-      >
+      <FAB />
+      <FilterDropdown />
+
+      {/* Modal de Carga */}
+      <Modal visible={importingBook} transparent={true} animationType="fade">
         <View style={styles.loaderOverlay}>
           <View style={[styles.loaderContent, { backgroundColor: colors.card }]}>
             <ActivityIndicator size="large" color={colors.primary} />
@@ -308,7 +398,7 @@ export default function LibraryScreen() {
         </View>
       </Modal>
 
-      {/* Invisible background metadata extractor WebView */}
+      {/* Extractor WebView */}
       {tempBookPath && (
         <View style={{ width: 0, height: 0, opacity: 0, position: 'absolute' }}>
           <WebView
@@ -336,8 +426,20 @@ const styles = StyleSheet.create({
     padding: 16,
     paddingTop: 50,
   },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  appIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   title: {
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: 'bold',
   },
   headerActions: {
@@ -345,55 +447,94 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
   },
-  themeButton: {
-    padding: 8,
+  headerActionButton: {
+    padding: 4,
   },
-  themeIcon: {
-    fontSize: 24,
-  },
-  importButtonSmall: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
+  sectionHeader: {
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: 16,
+    marginTop: 8,
   },
-  importIcon: {
-    fontSize: 24,
-    color: '#FFFFFF',
+  sectionTitle: {
+    fontSize: 18,
     fontWeight: 'bold',
   },
-  filterContainer: {
+  filterDropdownButton: {
     flexDirection: 'row',
-    paddingHorizontal: 16,
-    marginBottom: 16,
-    gap: 8,
-  },
-  filterButton: {
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 20,
-    borderWidth: 1,
-  },
-  filterText: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  loading: {
-    flex: 1,
-    justifyContent: 'center',
     alignItems: 'center',
+    gap: 4,
+  },
+  filterDropdownText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  continueCard: {
+    flexDirection: 'row',
+    padding: 16,
+    borderRadius: 16,
+    marginHorizontal: 16,
+    alignItems: 'center',
+    gap: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  continueCover: {
+    width: 60,
+    height: 90,
+    borderRadius: 8,
+  },
+  continueDetails: {
+    flex: 1,
+  },
+  continueTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 4,
+  },
+  continueAuthor: {
+    fontSize: 13,
+    marginBottom: 12,
+  },
+  progressBarContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
+  },
+  progressBar: {
+    height: 4,
+    borderRadius: 2,
+  },
+  progressPercentage: {
+    fontSize: 12,
+  },
+  continueChapter: {
+    fontSize: 12,
+  },
+  emptyList: {
+    flexGrow: 1,
+  },
+  listContainer: {
+    paddingHorizontal: 16,
+    paddingBottom: 100,
   },
   empty: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 32,
-    marginHorizontal: 32,
+    marginTop: 32,
+    marginHorizontal: 16,
     borderRadius: 16,
   },
   emptyTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: 'bold',
     marginBottom: 8,
     textAlign: 'center',
@@ -401,24 +542,6 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 14,
     textAlign: 'center',
-    marginBottom: 24,
-  },
-  importButton: {
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 24,
-  },
-  importButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  emptyList: {
-    flexGrow: 1,
-  },
-  listContainer: {
-    paddingHorizontal: 16,
-    paddingBottom: 24,
   },
   loaderOverlay: {
     flex: 1,
@@ -448,5 +571,44 @@ const styles = StyleSheet.create({
     marginTop: 8,
     fontSize: 13,
     textAlign: 'center',
+  },
+  dropdownOverlay: {
+    flex: 1,
+    backgroundColor: 'transparent',
+  },
+  dropdownContent: {
+    position: 'absolute',
+    top: 195,
+    right: 16,
+    width: 130,
+    borderRadius: 8,
+    padding: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  dropdownOption: {
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+  },
+  dropdownOptionText: {
+    fontSize: 14,
+  },
+  fab: {
+    position: 'absolute',
+    bottom: 30,
+    right: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 8,
   },
 });

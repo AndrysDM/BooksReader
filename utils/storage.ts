@@ -21,6 +21,7 @@ export interface Book {
   isFavorite: boolean;
   totalChapters: number;
   currentCfi?: string;
+  lastOpened?: string;
 }
 
 const BOOKS_KEY = '@biblioo_books';
