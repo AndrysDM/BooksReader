@@ -1,13 +1,14 @@
-import React, { useState, useRef } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, useWindowDimensions, Modal, ActivityIndicator } from 'react-native';
+import * as DocumentPicker from 'expo-document-picker';
 import { useRouter } from 'expo-router';
+import React, { useRef, useState } from 'react';
+import { ActivityIndicator, Alert, FlatList, Modal, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
+import { WebView } from 'react-native-webview';
+import BookCard from '../../components/BookCard';
 import { useLibrary } from '../../context/LibraryContext';
 import { useTheme } from '../../context/ThemeContext';
-import BookCard from '../../components/BookCard';
-import * as DocumentPicker from 'expo-document-picker';
-import { fileHandler, Book } from '../../utils/storage';
-import { WebView } from 'react-native-webview';
-import * as FileSystem from 'expo-file-system';
+import { Book, fileHandler } from '../../utils/storage';
+
+import { readAsStringAsync } from 'expo-file-system/legacy';
 
 const extractorHtml = `
 <!DOCTYPE html>
@@ -90,7 +91,7 @@ export default function LibraryScreen() {
   const { books, loading, addBook, toggleFavorite } = useLibrary();
   const { colors, theme, toggleTheme } = useTheme();
   const [filter, setFilter] = useState<'all' | 'favorites'>('all');
-  
+
   // Importer and Extractor States
   const [importingBook, setImportingBook] = useState<boolean>(false);
   const [tempBookPath, setTempBookPath] = useState<string | null>(null);
@@ -109,7 +110,7 @@ export default function LibraryScreen() {
       }
 
       setImportingBook(true);
-      
+
       const file = result.assets[0];
       const filename = `${Date.now()}_${file.name}`;
       const savedPath = await fileHandler.saveBook(file.uri, filename);
@@ -127,12 +128,13 @@ export default function LibraryScreen() {
   const handleExtractorMessage = async (event: any) => {
     try {
       const data = JSON.parse(event.nativeEvent.data);
-      
+
       if (data.type === 'ready_to_receive') {
         if (tempBookPath) {
           try {
-            const base64Data = await FileSystem.readAsStringAsync(tempBookPath, {
-              encoding: FileSystem.EncodingType.Base64,
+            // Usamos la función importada de /legacy directamente con el formato 'base64'
+            const base64Data = await readAsStringAsync(tempBookPath, {
+              encoding: 'base64',
             });
             const js = `window.extractMetadata("${base64Data}"); true;`;
             extractorWebViewRef.current?.injectJavaScript(js);
@@ -199,8 +201,8 @@ export default function LibraryScreen() {
   const numColumns = Math.max(2, Math.floor((width - 16) / 120));
   const itemWidth = (width - 32 - (numColumns - 1) * 16) / numColumns;
 
-  const filteredBooks = filter === 'all' 
-    ? books 
+  const filteredBooks = filter === 'all'
+    ? books
     : books.filter(book => book.isFavorite);
 
   const renderEmpty = () => (
@@ -209,8 +211,8 @@ export default function LibraryScreen() {
         {books.length === 0 ? 'Tu biblioteca está vacía' : 'No hay favoritos'}
       </Text>
       <Text style={[styles.emptyText, { color: colors.secondaryText }]}>
-        {books.length === 0 
-          ? 'Importa tu primer libro EPUB para comenzar' 
+        {books.length === 0
+          ? 'Importa tu primer libro EPUB para comenzar'
           : 'Marca libros como favoritos para verlos aquí'}
       </Text>
       {books.length === 0 && (
@@ -230,8 +232,8 @@ export default function LibraryScreen() {
           <TouchableOpacity onPress={toggleTheme} style={styles.themeButton}>
             <Text style={styles.themeIcon}>{theme === 'light' ? '🌙' : '☀️'}</Text>
           </TouchableOpacity>
-          <TouchableOpacity 
-            onPress={handleImportBook} 
+          <TouchableOpacity
+            onPress={handleImportBook}
             style={[styles.importButtonSmall, { backgroundColor: colors.primary }]}
           >
             <Text style={styles.importIcon}>+</Text>

@@ -1,4 +1,4 @@
-import * as FileSystem from 'expo-file-system';
+import { readAsStringAsync } from 'expo-file-system/legacy';
 import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, StyleSheet, View } from 'react-native';
 import { WebView } from 'react-native-webview';
@@ -20,6 +20,7 @@ interface EpubViewerProps {
   onNavigationLoaded?: (toc: { label: string; href: string }[]) => void;
   onToggleControls?: () => void;
   onCoverExtracted?: (cover: string) => void;
+  onTextSelected?: (text: string) => void;
 }
 
 const EpubViewer = forwardRef<EpubViewerRef, EpubViewerProps>(({
@@ -29,7 +30,8 @@ const EpubViewer = forwardRef<EpubViewerRef, EpubViewerProps>(({
   onProgressChange,
   onNavigationLoaded,
   onToggleControls,
-  onCoverExtracted
+  onCoverExtracted,
+  onTextSelected
 }, ref) => {
   const webViewRef = useRef<WebView>(null);
   const [loading, setLoading] = useState(true);
@@ -47,14 +49,14 @@ const EpubViewer = forwardRef<EpubViewerRef, EpubViewerProps>(({
       webViewRef.current?.injectJavaScript(`window.goToChapter("${href}"); true;`);
     },
     goToPercentage(percentage) { // <- Agrega este bloque
-    webViewRef.current?.injectJavaScript(`
+      webViewRef.current?.injectJavaScript(`
       if (rendition && book && book.locations) {
         const cfi = book.locations.cfiFromPercentage(${percentage});
         if (cfi) rendition.display(cfi);
       }
       true;
     `);
-  }
+    }
   }));
 
   // Listen for font size changes
@@ -71,7 +73,7 @@ const EpubViewer = forwardRef<EpubViewerRef, EpubViewerProps>(({
     }
   }, [theme, loading]);
 
- const htmlContent = `
+  const htmlContent = `
 <!DOCTYPE html>
 <html>
 <head>
@@ -197,24 +199,34 @@ const EpubViewer = forwardRef<EpubViewerRef, EpubViewerProps>(({
         rendition.hooks.content.register((content) => {
           const doc = content.document;
           
-          // 1. Inyectamos los estilos base de fondo y texto
+          // 1. Inyectamos los estilos base de fondo y texto[cite: 1]
           const style = doc.createElement("style");
-          const bg = currentTheme === 'dark' ? '#121212' : '#ffffff';
-          const text = currentTheme === 'dark' ? '#B0B0B0' : '#1A1A1A';
-          style.innerHTML = 'html, body { background-color: ' + bg + ' !important; color: ' + text + ' !important; }';
-          doc.head.appendChild(style);
+          const bg = currentTheme === 'dark' ? '#121212' : '#ffffff'; //[cite: 1]
+          const text = currentTheme === 'dark' ? '#B0B0B0' : '#1A1A1A'; //[cite: 1]
+          style.innerHTML = 'html, body { background-color: ' + bg + ' !important; color: ' + text + ' !important; }'; //[cite: 1]
+          doc.head.appendChild(style); //[cite: 1]
 
-          // 2. DETECTOR DE ENLACES REALES:
-          // Filtramos todos los <a> del documento
-          const links = doc.querySelectorAll('a');
+          // 2. DETECTOR DE ENLACES REALES:[cite: 1]
+          const links = doc.querySelectorAll('a'); //[cite: 1]
           links.forEach(link => {
-            const href = link.getAttribute('href');
-            
-            // Si tiene un href válido, no está vacío, no es solo un '#' 
-            // y además el texto interno no es exageradamente largo (menos de 60 caracteres)
-            if (href && href !== '#' && href.trim() !== '' && link.textContent.trim().length < 60) {
-              // Es un enlace real (nota al pie, índice, etc.) -> Le añadimos una clase CSS
-              link.classList.add('enlace-real');
+            const href = link.getAttribute('href'); //[cite: 1]
+            if (href && href !== '#' && href.trim() !== '' && link.textContent.trim().length < 60) { //[cite: 1]
+              link.classList.add('enlace-real'); //[cite: 1]
+            }
+          });
+
+          // 3. NUEVO: DETECTOR DE SELECCIÓN DE PALABRAS
+          // Escuchamos cuando el usuario termina de seleccionar texto en el iframe
+          doc.addEventListener('selectionchange', () => {
+            const selection = doc.getSelection();
+            const textoSeleccionado = selection ? selection.toString().trim() : '';
+
+            // Validamos que sea una palabra o frase corta razonable (evitamos ruidos o párrafos enteros)
+            if (textoSeleccionado && textoSeleccionado.length > 0 && textoSeleccionado.length < 50) {
+              window.ReactNativeWebView.postMessage(JSON.stringify({
+                type: 'text_selected',
+                text: textoSeleccionado
+              }));
             }
           });
         });
@@ -493,16 +505,21 @@ const EpubViewer = forwardRef<EpubViewerRef, EpubViewerProps>(({
       switch (data.type) {
         case 'ready_to_receive':
           try {
-            const base64Data = await FileSystem.readAsStringAsync(book.filePath, {
-              encoding: FileSystem.EncodingType.Base64,
+            // Usamos la función importada desde /legacy que sí soporta 'base64' sin dar errores
+            const base64Data = await readAsStringAsync(book.filePath, {
+              encoding: 'base64',
             });
+
             const cfiParam = book.currentCfi ? `"${book.currentCfi}"` : 'null';
             const js = `window.initBook("${base64Data}", ${fontSize}, "${theme}", ${cfiParam}); true;`;
             webViewRef.current?.injectJavaScript(js);
           } catch (err: any) {
             console.error('Error reading book file:', err);
             setLoading(false);
-            Alert.alert('Error', 'No se pudo leer el archivo del libro. Es posible que el archivo esté corrupto o no se encuentre.');
+            Alert.alert(
+              'Error',
+              'No se pudo leer el archivo del libro. Es posible que el archivo esté corrupto o no se encuentre.'
+            );
           }
           break;
         case 'navigation':
@@ -520,6 +537,9 @@ const EpubViewer = forwardRef<EpubViewerRef, EpubViewerProps>(({
           break;
         case 'cover':
           onCoverExtracted?.(data.cover);
+          break;
+        case 'text_selected': // 👈 AGREGA ESTE CASO
+          onTextSelected?.(data.text);
           break;
         case 'ready':
           setLoading(false);

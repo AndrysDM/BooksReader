@@ -1,5 +1,13 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as FileSystem from 'expo-file-system';
+// Importamos absolutamente todo lo relacionado con el sistema de archivos clásico desde la ruta legacy
+import {
+  copyAsync,
+  deleteAsync,
+  documentDirectory,
+  getInfoAsync,
+  makeDirectoryAsync,
+  readAsStringAsync
+} from 'expo-file-system/legacy';
 
 export interface Book {
   id: string;
@@ -78,13 +86,14 @@ export const storage = {
 };
 
 export const fileHandler = {
-  booksDir: `${FileSystem.documentDirectory}books/`,
+  // Ahora documentDirectory se lee perfectamente desde la importación directa de /legacy
+  booksDir: `${documentDirectory}books/`,
 
   async init(): Promise<void> {
     try {
-      const dirInfo = await FileSystem.getInfoAsync(this.booksDir);
+      const dirInfo = await getInfoAsync(this.booksDir);
       if (!dirInfo.exists) {
-        await FileSystem.makeDirectoryAsync(this.booksDir, { intermediates: true });
+        await makeDirectoryAsync(this.booksDir, { intermediates: true });
       }
     } catch (error) {
       console.error('Error initializing books directory:', error);
@@ -95,12 +104,12 @@ export const fileHandler = {
     const newPath = `${this.booksDir}${filename}`;
     
     try {
-      const existingInfo = await FileSystem.getInfoAsync(newPath);
+      const existingInfo = await getInfoAsync(newPath);
       if (existingInfo.exists) {
-        await FileSystem.deleteAsync(newPath);
+        await deleteAsync(newPath);
       }
       
-      await FileSystem.copyAsync({
+      await copyAsync({
         from: uri,
         to: newPath,
       });
@@ -114,9 +123,9 @@ export const fileHandler = {
 
   async deleteBookFile(filePath: string): Promise<void> {
     try {
-      const info = await FileSystem.getInfoAsync(filePath);
+      const info = await getInfoAsync(filePath);
       if (info.exists) {
-        await FileSystem.deleteAsync(filePath);
+        await deleteAsync(filePath);
       }
     } catch (error) {
       console.error('Error deleting book file:', error);
@@ -125,7 +134,7 @@ export const fileHandler = {
 
   async readBookContent(filePath: string): Promise<string | null> {
     try {
-      const content = await FileSystem.readAsStringAsync(filePath);
+      const content = await readAsStringAsync(filePath);
       return content;
     } catch (error) {
       console.error('Error reading book content:', error);

@@ -7,6 +7,13 @@ import EpubViewer, { EpubViewerRef } from '../../components/EpubViewer';
 import { useLibrary } from '../../context/LibraryContext';
 import { useTheme } from '../../context/ThemeContext';
 
+import diccionarioData from '../../assets/diccionario_produccion.json'; // Ajusta la ruta a tu carpeta assets
+import lemasData from '../../assets/lemas_en.json';
+
+// Tipamos el JSON para evitar quejas de TypeScript
+const diccionario: Record<string, string> = diccionarioData;
+const lemas: Record<string, string> = lemasData;
+
 export default function ReaderScreen() {
   const params = useLocalSearchParams();
   const router = useRouter();
@@ -26,6 +33,12 @@ export default function ReaderScreen() {
 
   const epubViewerRef = useRef<EpubViewerRef>(null);
   const book = books.find(b => b.id === params.id);
+
+  const [selectedText, setSelectedText] = useState<string>('');
+  const [translation, setTranslation] = useState<string>('');
+  const [showDictionaryModal, setShowDictionaryModal] = useState<boolean>(false);
+
+
 
   // Manage Status Bar and Navigation Bar visibility based on controls toggle
   useEffect(() => {
@@ -76,7 +89,36 @@ export default function ReaderScreen() {
     }
     await updateProgress(book.id, progress, chapter, cfi);
   };
+  const handleTextSelected = (text: string) => {
+    // Limpieza de puntuación
+    const palabraLimpia = text.toLowerCase().replace(/^[.,\/#!$%\^&\*;:{}=\-_`~()¿?¡!«»"']+|[.,\/#!$%\^&\*;:{}=\-_`~()¿?¡!«»"']+$/g, "").trim();
 
+    if (!palabraLimpia) return;
+
+    let resultado = null;
+
+    // 1. Búsqueda directa
+    if (diccionario[palabraLimpia]) {
+      resultado = diccionario[palabraLimpia];
+    }
+    // 2. Búsqueda por Lema (si no se encontró directa)
+    else {
+      const formaBase = lemas[palabraLimpia]; // Buscamos si tiene un lema
+      if (formaBase && diccionario[formaBase]) {
+        resultado = diccionario[formaBase];
+        console.log(`Lema encontrado: ${palabraLimpia} -> ${formaBase}`);
+      }
+    }
+
+    // Si después de todo no encontramos nada
+    if (!resultado) {
+      resultado = "No se encontró una traducción exacta para esta palabra.";
+    }
+
+    setSelectedText(text);
+    setTranslation(resultado);
+    setShowDictionaryModal(true);
+  };
   // const handlePrevPage = () => {
   //   epubViewerRef.current?.prevPage();
   // };
@@ -120,25 +162,25 @@ export default function ReaderScreen() {
 
   // Función para convertir la estructura de árbol en una lista plana fácil de leer por FlatList
   const flattenChapters = (navItems: any[], level = 0): any[] => {
-  if (!navItems || !Array.isArray(navItems)) return [];
-  
-  let flatList: any[] = [];
-  
-  navItems.forEach((item) => {
-    flatList.push({
-      label: item.label,
-      href: item.href,
-      level: level
+    if (!navItems || !Array.isArray(navItems)) return [];
+
+    let flatList: any[] = [];
+
+    navItems.forEach((item) => {
+      flatList.push({
+        label: item.label,
+        href: item.href,
+        level: level
+      });
+
+      // Verificamos de forma segura si tiene subcapítulos
+      if (item.subitems && Array.isArray(item.subitems) && item.subitems.length > 0) {
+        flatList = flatList.concat(flattenChapters(item.subitems, level + 1));
+      }
     });
-    
-    // Verificamos de forma segura si tiene subcapítulos
-    if (item.subitems && Array.isArray(item.subitems) && item.subitems.length > 0) {
-      flatList = flatList.concat(flattenChapters(item.subitems, level + 1));
-    }
-  });
-  
-  return flatList;
-};
+
+    return flatList;
+  };
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -152,6 +194,7 @@ export default function ReaderScreen() {
         onNavigationLoaded={setChapters}
         onToggleControls={handleToggleControls}
         onCoverExtracted={handleCoverExtracted}
+        onTextSelected={handleTextSelected}
       />
 
       {/* Header (Slide/Overlay from Top) */}
@@ -253,19 +296,19 @@ export default function ReaderScreen() {
                 const indentation = (item.level || 0) * 20;
 
                 return (
-                  <TouchableOpacity 
+                  <TouchableOpacity
                     style={[
-                      styles.chapterItem, 
-                      { 
+                      styles.chapterItem,
+                      {
                         borderBottomColor: colors.border,
                         paddingLeft: 16 + indentation // Aplica el espacio a la izquierda
                       }
                     ]}
                     onPress={() => handleGoToChapter(item.href)}
                   >
-                    <Text 
+                    <Text
                       style={[
-                        item.level > 0 ? styles.subChapterLabel : styles.chapterLabel, 
+                        item.level > 0 ? styles.subChapterLabel : styles.chapterLabel,
                         { color: item.level > 0 ? colors.secondaryText : colors.text }
                       ]}
                     >
@@ -338,6 +381,37 @@ export default function ReaderScreen() {
             </View>
           </View>
         </View>
+      </Modal>
+      {/* Dictionary Floating Modal (Quick Lookup) */}
+      <Modal
+        visible={showDictionaryModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowDictionaryModal(false)}
+      >
+        <TouchableOpacity
+          style={styles.dictionaryOverlay}
+          activeOpacity={1}
+          onPress={() => setShowDictionaryModal(false)}
+        >
+          <View style={[styles.dictionaryContent, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <View style={styles.dictionaryHeader}>
+              <Text style={[styles.dictionaryWord, { color: colors.text }]} numberOfLines={1}>
+                🔍 {selectedText}
+              </Text>
+              <TouchableOpacity
+                style={styles.closeDictionaryButton}
+                onPress={() => setShowDictionaryModal(false)}
+              >
+                <Text style={{ color: colors.secondaryText, fontWeight: '700' }}>Cerrar</Text>
+              </TouchableOpacity>
+            </View>
+
+            <Text style={[styles.dictionaryTranslation, { color: colors.text }]}>
+              {translation}
+            </Text>
+          </View>
+        </TouchableOpacity>
       </Modal>
     </View>
   );
@@ -522,5 +596,40 @@ const styles = StyleSheet.create({
   subChapterLabel: {
     fontSize: 14,
     fontWeight: '400', // Un poco más delgado que el capítulo principal
+  },
+  dictionaryOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.3)', // Un fondo oscuro sutil
+    justifyContent: 'flex-end', // Lo posiciona abajo como un bottom sheet
+  },
+  dictionaryContent: {
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    borderWidth: 1,
+    borderBottomWidth: 0,
+    padding: 20,
+    paddingBottom: Platform.OS === 'ios' ? 34 : 24, // Control de área segura
+  },
+  dictionaryHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  dictionaryWord: {
+    fontSize: 18,
+    fontWeight: '700',
+    flex: 1,
+    marginRight: 10,
+  },
+  closeDictionaryButton: {
+    paddingVertical: 4,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+  },
+  dictionaryTranslation: {
+    fontSize: 15,
+    lineHeight: 22,
+    fontStyle: 'italic',
   },
 });
