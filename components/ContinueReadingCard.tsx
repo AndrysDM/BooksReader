@@ -16,6 +16,7 @@ export interface Book {
 interface ContinueReadingCardProps {
   book: Book;
   colors: {
+    background: string;
     card: string;
     text: string;
     secondaryText: string;
@@ -58,7 +59,7 @@ export const ContinueReadingCard: React.FC<ContinueReadingCardProps> = ({ book, 
       </View>
 
       <TouchableOpacity 
-        style={[styles.continueCard, { backgroundColor: colors.card }]} 
+        style={[styles.continueCard, { backgroundColor: colors.background }]} 
         onPress={onPress}
         activeOpacity={0.85}
       >

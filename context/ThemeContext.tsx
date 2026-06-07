@@ -24,7 +24,7 @@ const lightColors = {
   secondaryText: '#666666',
   card: '#F5F5F5',
   border: '#E0E0E0',
-  primary: '#2196F3',
+  primary: '#970080ff',
   accent: '#FF5722',
 };
 

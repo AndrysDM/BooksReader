@@ -93,7 +93,7 @@ let globalLastOpenedBookId: string | null = null;
 export default function LibraryScreen() {
   const router = useRouter();
   const navigation = useNavigation(); // Hook para escuchar eventos de navegación
-  const { books, loading, addBook, toggleFavorite, updateBook } = useLibrary();
+  const { books, addBook, toggleFavorite, updateBook } = useLibrary();
   const { colors } = useTheme();
   const [filter, setFilter] = useState<'all' | 'favorites'>('all');
   const [filterDropdownVisible, setFilterDropdownVisible] = useState(false);
@@ -240,24 +240,15 @@ export default function LibraryScreen() {
 
   // Selección inteligente del libro en lectura activa
   const currentReadingBook = useMemo(() => {
-    const inProgress = books.filter(book => {
-      const p = Number(book.progress) || 0;
-      // Detecta la escala de forma dinámica: 
-      // Si es menor o igual a 1, el tope es 1 (escala 0-1). Si es mayor, el tope es 100 (escala 0-100)
-      const maxProgress = p <= 1 ? 1 : 100;
-      return p > 0 && p < maxProgress;
-    });
-
-    if (inProgress.length === 0) return null;
 
     // 1. Prioridad: Si coincide con el ID guardado en memoria en esta sesión
     if (globalLastOpenedBookId) {
-      const lastBook = inProgress.find(book => book.id === globalLastOpenedBookId);
+      const lastBook = books.find(book => book.id === globalLastOpenedBookId);
       if (lastBook) return lastBook;
     }
 
     // 2. Fallback: Ordenar por fecha 'lastOpened'
-    return [...inProgress].sort((a, b) => {
+    return [...books].sort((a, b) => {
       const timeA = a.lastOpened ? new Date(a.lastOpened).getTime() : 0;
       const timeB = b.lastOpened ? new Date(b.lastOpened).getTime() : 0;
       return timeB - timeA;
@@ -279,37 +270,34 @@ export default function LibraryScreen() {
 
 
   const FilterDropdown = () => (
-    <Modal
-      visible={filterDropdownVisible}
-      transparent={true}
-      animationType="fade"
-      onRequestClose={() => setFilterDropdownVisible(false)}
-    >
+    <>
+      {/* Capa invisible para cerrar al tocar fuera */}
       <TouchableOpacity
         style={styles.dropdownOverlay}
         activeOpacity={1}
-        onPressOut={() => setFilterDropdownVisible(false)}
-      >
-        <View style={[styles.dropdownContent, { backgroundColor: colors.card }]}>
-          <TouchableOpacity
-            style={styles.dropdownOption}
-            onPress={() => { setFilter('all'); setFilterDropdownVisible(false); }}
-          >
-            <Text style={[styles.dropdownOptionText, { color: colors.text, fontWeight: filter === 'all' ? 'bold' : 'normal' }]}>
-              Todos
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.dropdownOption}
-            onPress={() => { setFilter('favorites'); setFilterDropdownVisible(false); }}
-          >
-            <Text style={[styles.dropdownOptionText, { color: colors.text, fontWeight: filter === 'favorites' ? 'bold' : 'normal' }]}>
-              Favoritos
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </TouchableOpacity>
-    </Modal>
+        onPress={() => setFilterDropdownVisible(false)}
+      />
+
+      {/* Contenido del Dropdown alineado al botón */}
+      <View style={[styles.dropdownContent, { backgroundColor: colors.card }]}>
+        <TouchableOpacity
+          style={styles.dropdownOption}
+          onPress={() => { setFilter('all'); setFilterDropdownVisible(false); }}
+        >
+          <Text style={[styles.dropdownOptionText, { color: colors.text, fontWeight: filter === 'all' ? 'bold' : 'normal' }]}>
+            Todos
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.dropdownOption}
+          onPress={() => { setFilter('favorites'); setFilterDropdownVisible(false); }}
+        >
+          <Text style={[styles.dropdownOptionText, { color: colors.text, fontWeight: filter === 'favorites' ? 'bold' : 'normal' }]}>
+            Favoritos
+          </Text>
+        </TouchableOpacity>
+      </View>
+    </>
   );
 
   const FAB = () => (
@@ -325,45 +313,52 @@ export default function LibraryScreen() {
         <View style={styles.headerLeft}>
           <View style={[styles.appIcon, { backgroundColor: colors.primary }]}>
             <Ionicons name="book" size={22} color="#FFFFFF" />
+            <View style={styles.subIconContainer}>
+              <Ionicons name="chatbox-ellipses-outline" size={10} color={colors.primary} />
+            </View><View style={styles.subIconContainer}>
+              <Ionicons name="chatbox-ellipses" size={9.5} color={colors.background} />
+            </View>
           </View>
           <Text style={[styles.title, { color: colors.text }]}>Biblioteca</Text>
         </View>
         <View style={styles.headerActions}>
           <TouchableOpacity style={styles.headerActionButton}>
-            <Ionicons name="search-outline" size={22} color={colors.text} />
+            <Ionicons name="search-sharp" size={30} color={colors.text} />
           </TouchableOpacity>
           <TouchableOpacity style={styles.headerActionButton}>
-            <Ionicons name="settings-outline" size={22} color={colors.text} />
+            <Ionicons name="settings-sharp" size={28} color={colors.text} />
           </TouchableOpacity>
         </View>
       </View>
+      <View style={styles.continueReadingContainer}>
+        {currentReadingBook && (
+          <ContinueReadingCard
+            book={currentReadingBook}
+            colors={colors}
+            onPress={() => handleOpenBook(currentReadingBook)}
+          />
+        )}
 
+        <View style={[styles.sectionHeader, { marginTop: currentReadingBook ? 24 : 8 }]}>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Mis libros</Text>
+
+          <TouchableOpacity style={styles.filterDropdownButton} onPress={() => setFilterDropdownVisible(true)}>
+            <Text style={[styles.filterDropdownText, { color: colors.secondaryText }]}>
+              {filter === 'all' ? 'Todos' : 'Favoritos'}
+            </Text>
+            <Ionicons name="chevron-down" size={14} color={colors.secondaryText} style={{ marginTop: 2 }} />
+
+            {/* Renderizado condicional directo, sin Modal nativo */}
+            {filterDropdownVisible && <FilterDropdown />}
+          </TouchableOpacity>
+        </View>
+      </View>
       <FlatList
         key={numColumns}
         data={filteredBooks}
         numColumns={numColumns}
         keyExtractor={(item) => item.id}
-        ListHeaderComponent={() => (
-          <>
-            {currentReadingBook && (
-              <ContinueReadingCard
-                book={currentReadingBook}
-                colors={colors}
-                onPress={() => handleOpenBook(currentReadingBook)}
-              />
-            )}
-
-            <View style={[styles.sectionHeader, { marginTop: currentReadingBook ? 24 : 8 }]}>
-              <Text style={[styles.sectionTitle, { color: colors.text }]}>Mis libros</Text>
-              <TouchableOpacity style={styles.filterDropdownButton} onPress={() => setFilterDropdownVisible(true)}>
-                <Text style={[styles.filterDropdownText, { color: colors.secondaryText }]}>
-                  {filter === 'all' ? 'Todos' : 'Favoritos'}
-                </Text>
-                <Ionicons name="chevron-down" size={14} color={colors.secondaryText} style={{ marginTop: 2 }} />
-              </TouchableOpacity>
-            </View>
-          </>
-        )}
+        removeClippedSubviews={false}
         renderItem={({ item }) => (
           <BookCard
             book={item}
@@ -380,9 +375,9 @@ export default function LibraryScreen() {
         ListEmptyComponent={renderEmpty}
       />
 
-      <FAB />
-      <FilterDropdown />
 
+
+      <FAB />
       {/* Modal de Carga */}
       <Modal visible={importingBook} transparent={true} animationType="fade">
         <View style={styles.loaderOverlay}>
@@ -437,6 +432,12 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
+  }, subIconContainer: {
+    position: 'absolute',
+    bottom: 7, // Ajusta para posicionar verticalmente
+    right: 2, // Ajusta para posicionar horizontalmente
+    borderRadius: 12, // Ajusta para redondear el contenedor del sub-icono
+    padding: 2, // Añade padding para el sub-icono
   },
   title: {
     fontSize: 24,
@@ -457,15 +458,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 16,
     marginTop: 8,
+    zIndex: 10,
+    elevation: 10,
   },
   sectionTitle: {
     fontSize: 18,
     fontWeight: 'bold',
   },
   filterDropdownButton: {
+    position: 'relative',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
+    zIndex: 11,
+    elevation: 11,
   },
   filterDropdownText: {
     fontSize: 14,
@@ -520,6 +526,9 @@ const styles = StyleSheet.create({
   emptyList: {
     flexGrow: 1,
   },
+  continueReadingContainer: {
+    paddingHorizontal: 16,
+  },
   listContainer: {
     paddingHorizontal: 16,
     paddingBottom: 100,
@@ -573,13 +582,21 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   dropdownOverlay: {
-    flex: 1,
+    position: 'absolute',
+    // Rompe el contenedor padre expandiéndose a toda la pantalla para capturar el touch
+    top: -1000,
+    bottom: -1000,
+    left: -1000,
+    right: -1000,
     backgroundColor: 'transparent',
+    zIndex: 40,
   },
   dropdownContent: {
     position: 'absolute',
-    top: 195,
-    right: 16,
+    // 👇 Esto lo empuja exactamente al límite inferior de tu filterDropdownButton
+    top: '100%',
+    right: 0,
+    marginTop: 4, // Pequeña separación del botón
     width: 130,
     borderRadius: 8,
     padding: 4,
@@ -588,6 +605,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 4,
     elevation: 5,
+    zIndex: 50, // Asegura que quede por encima de las listas de libros
   },
   dropdownOption: {
     paddingVertical: 10,
