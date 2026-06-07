@@ -215,10 +215,10 @@ export default function ReaderScreen() {
             </View>
           </View>
           <View style={styles.headerActions}>
-            <TouchableOpacity onPress={handleDeleteBook} style={styles.headerButton}>
+            <TouchableOpacity onPress={() => { }} style={styles.headerButton}>
               <Ionicons name="search" size={24} color={colors.text} />
             </TouchableOpacity>
-             <TouchableOpacity onPress={() => setShowSettings(true)} style={styles.headerButton}>
+            <TouchableOpacity onPress={() => { }} style={styles.headerButton}>
               <Ionicons name="bookmark-outline" size={24} color={colors.text} />
             </TouchableOpacity>
             <TouchableOpacity onPress={() => setShowSettings(true)} style={styles.headerButton}>
@@ -384,9 +384,17 @@ export default function ReaderScreen() {
             </View>
 
             {/* Progress Info */}
-            <View style={styles.progressInfo}>
-              <Text style={[styles.progressLabel, { color: colors.secondaryText }]}>Progreso actual</Text>
-              <Text style={[styles.progressValue, { color: colors.text }]}>{currentProgress}% completado</Text>
+            <View style={{ flexDirection: 'row', width: '100%', justifyContent: 'space-between', alignItems: 'center', borderTopWidth: 1,}}>
+              <View style={styles.progressInfo}>
+                <Text style={[styles.progressLabel, { color: colors.secondaryText }]}>Progreso actual</Text>
+                <Text style={[styles.progressValue, { color: colors.text }]}>{currentProgress}% completado</Text>
+              </View >
+              <TouchableOpacity
+                onPress={handleDeleteBook}
+                style={[styles.themeToggle, { backgroundColor: '#ff4d4d', marginTop: 20 }]}
+              >
+                <Ionicons name="trash" size={18} color="#fff" />
+              </TouchableOpacity>
             </View>
           </View>
         </View>
@@ -442,6 +450,7 @@ const styles = StyleSheet.create({
     padding: 16,
     paddingTop: 50,
     borderBottomWidth: 1,
+    paddingRight: 24,
   },
   headerLeftContainer: {
     flexDirection: 'row',
@@ -480,7 +489,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 16,
     // Espacio de seguridad generoso abajo para evitar interferencias con la navegación del móvil
-    paddingBottom: Platform.OS === 'ios' ? 40 : 28,
+    paddingBottom: Platform.OS === 'ios' ? 45 : 33,
     zIndex: 100,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -4 },
@@ -512,14 +521,13 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 40,
     justifyContent: 'center',
-    marginBottom: 12,
   },
   pageSlider: {
     width: '100%',
     height: 40,
   },
   bottomBarButtonsRow: {
-    flexDirection: 'row',
+    flexDirection: 'column',
     justifyContent: 'center', // Centra el botón horizontalmente
     alignItems: 'center',
     marginTop: 4,
@@ -605,7 +613,6 @@ const styles = StyleSheet.create({
   progressInfo: {
     marginTop: 16,
     paddingTop: 16,
-    borderTopWidth: 1,
   },
   progressLabel: {
     fontSize: 14,
