@@ -7,6 +7,7 @@ import EpubViewer, { EpubViewerRef } from '../../components/EpubViewer';
 import { useLibrary } from '../../context/LibraryContext';
 import { useTheme } from '../../context/ThemeContext';
 
+import { Ionicons } from '@expo/vector-icons';
 import diccionarioData from '../../assets/diccionario_produccion.json'; // Ajusta la ruta a tu carpeta assets
 import lemasData from '../../assets/lemas_en.json';
 
@@ -200,21 +201,30 @@ export default function ReaderScreen() {
       {/* Header (Slide/Overlay from Top) */}
       {showControls && (
         <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
-            <Text style={[styles.headerButtonText, { color: colors.text }]}>← Volver</Text>
-          </TouchableOpacity>
-
-          <Text style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1}>
-            {book.title}
-          </Text>
-
+          <View style={styles.headerLeftContainer}>
+            <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
+              <Ionicons name="arrow-back" size={24} color={colors.text} />
+            </TouchableOpacity>
+            <View>
+              <Text style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1}>
+                {book.title}
+              </Text>
+              <Text style={[styles.headerAutor, { color: colors.secondaryText }]} numberOfLines={1}>
+                {book.author}
+              </Text>
+            </View>
+          </View>
           <View style={styles.headerActions}>
-            <TouchableOpacity onPress={() => setShowSettings(true)} style={styles.headerButton}>
-              <Text style={[styles.headerButtonText, { color: colors.text }]}>⚙️</Text>
-            </TouchableOpacity>
             <TouchableOpacity onPress={handleDeleteBook} style={styles.headerButton}>
-              <Text style={[styles.headerButtonText, { color: colors.text }]}>🗑️</Text>
+              <Ionicons name="search" size={24} color={colors.text} />
             </TouchableOpacity>
+             <TouchableOpacity onPress={() => setShowSettings(true)} style={styles.headerButton}>
+              <Ionicons name="bookmark-outline" size={24} color={colors.text} />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setShowSettings(true)} style={styles.headerButton}>
+              <Ionicons name="ellipsis-vertical-sharp" size={24} color={colors.text} />
+            </TouchableOpacity>
+
           </View>
         </View>
       )}
@@ -263,14 +273,13 @@ export default function ReaderScreen() {
           {/* Fila Inferior: Solo el botón de Capítulos centrado */}
           <View style={styles.bottomBarButtonsRow}>
             <TouchableOpacity onPress={() => setShowChapters(true)} style={styles.centerChaptersButton}>
-              <Text style={[styles.bottomBarButtonText, { color: colors.text }]}>📑 Capítulos</Text>
+              <Ionicons name="list" size={30} color={colors.text} />
             </TouchableOpacity>
           </View>
 
         </View>
       )}
 
-      {/* Chapters Modal */}
       {/* Chapters Modal */}
       <Modal
         visible={showChapters}
@@ -397,13 +406,13 @@ export default function ReaderScreen() {
           <View style={[styles.dictionaryContent, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <View style={styles.dictionaryHeader}>
               <Text style={[styles.dictionaryWord, { color: colors.text }]} numberOfLines={1}>
-                🔍 {selectedText}
+                <Ionicons name="search" size={20} color={colors.text} /> {selectedText}
               </Text>
               <TouchableOpacity
                 style={styles.closeDictionaryButton}
                 onPress={() => setShowDictionaryModal(false)}
               >
-                <Text style={{ color: colors.secondaryText, fontWeight: '700' }}>Cerrar</Text>
+                <Ionicons name="close" size={24} color={colors.secondaryText} />
               </TouchableOpacity>
             </View>
 
@@ -434,6 +443,13 @@ const styles = StyleSheet.create({
     paddingTop: 50,
     borderBottomWidth: 1,
   },
+  headerLeftContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '70%',
+    overflow: 'hidden',
+    gap: 12,
+  },
   headerButton: {
     padding: 8,
   },
@@ -442,9 +458,15 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     flex: 1,
-    textAlign: 'center',
-    fontSize: 16,
+    textAlign: 'left',
+    fontSize: 14,
     fontWeight: '600',
+  },
+  headerAutor: {
+    flex: 1,
+    textAlign: 'left',
+    fontSize: 12,
+    fontWeight: '400',
   },
   headerActions: {
     flexDirection: 'row',
