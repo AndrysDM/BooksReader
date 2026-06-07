@@ -1,7 +1,7 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
-import { Book } from '../utils/storage';
-import { useTheme } from '../context/ThemeContext';
+import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useTheme } from '../../context/ThemeContext';
+import { Book } from '../../utils/storage';
 
 interface BookCardProps {
   book: Book;

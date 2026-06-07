@@ -1,9 +1,9 @@
+import EpubViewer, { EpubViewerRef } from '@/components/reader/EpubViewer';
 import Slider from '@react-native-community/slider';
 import * as NavigationBar from 'expo-navigation-bar';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import { Alert, FlatList, Modal, Platform, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import EpubViewer, { EpubViewerRef } from '../../components/EpubViewer';
 import { useLibrary } from '../../context/LibraryContext';
 import { useTheme } from '../../context/ThemeContext';
 

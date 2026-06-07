@@ -1,12 +1,12 @@
-import { ContinueReadingCard } from '@/components/ContinueReadingCard';
+import BookCard from '@/components/home/BookCard';
+import { ContinueReadingCard } from '@/components/home/ContinueReadingCard';
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import { readAsStringAsync } from 'expo-file-system/legacy';
-import { useNavigation, useRouter } from 'expo-router'; // Añadido useNavigation
+import { useNavigation, useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Modal, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { WebView } from 'react-native-webview';
-import BookCard from '../../components/BookCard';
 import { useLibrary } from '../../context/LibraryContext';
 import { useTheme } from '../../context/ThemeContext';
 import { Book, fileHandler } from '../../utils/storage';

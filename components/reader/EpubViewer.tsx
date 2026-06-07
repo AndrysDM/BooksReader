@@ -2,8 +2,8 @@ import { readAsStringAsync } from 'expo-file-system/legacy';
 import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, StyleSheet, View } from 'react-native';
 import { WebView } from 'react-native-webview';
-import { useTheme } from '../context/ThemeContext';
-import { Book } from '../utils/storage';
+import { useTheme } from '../../context/ThemeContext';
+import { Book } from '../../utils/storage';
 
 export interface EpubViewerRef {
   nextPage: () => void;
