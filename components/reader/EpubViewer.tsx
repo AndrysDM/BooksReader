@@ -5,11 +5,17 @@ import { WebView } from 'react-native-webview';
 import { useTheme } from '../../context/ThemeContext';
 import { Book } from '../../utils/storage/types';
 
+export interface SearchResult {
+  cfi: string;
+  excerpt: string;
+  chapterTitle: string;
+}
 export interface EpubViewerRef {
   nextPage: () => void;
   prevPage: () => void;
   goToChapter: (href: string) => void;
   goToPercentage: (percentage: number) => void;
+  search: (query: string) => void;
 }
 
 interface EpubViewerProps {
@@ -22,6 +28,7 @@ interface EpubViewerProps {
   onCoverExtracted?: (cover: string) => void;
   onTextSelected?: (text: string) => void;
   cfiIndex: string[] | null; // Caché de ubicaciones recibido de SQLite
+  onSearchResults?: (results: SearchResult[]) => void;
 }
 
 const EpubViewer = forwardRef<EpubViewerRef, EpubViewerProps>(({
@@ -33,7 +40,8 @@ const EpubViewer = forwardRef<EpubViewerRef, EpubViewerProps>(({
   onNavigationLoaded,
   onToggleControls,
   onCoverExtracted,
-  onTextSelected
+  onTextSelected,
+  onSearchResults
 }, ref) => {
   const webViewRef = useRef<WebView>(null);
   const [loading, setLoading] = useState(true);
@@ -51,6 +59,9 @@ const EpubViewer = forwardRef<EpubViewerRef, EpubViewerProps>(({
     },
     goToPercentage(percentage) {
       webViewRef.current?.injectJavaScript(`window.goToPercentage(${percentage}); true;`);
+    },
+    search(query: string) {
+      webViewRef.current?.injectJavaScript(`window.searchTextInBook("${query.replace(/"/g, '\\"SafeString')}"); true;`);
     }
   }));
 
@@ -340,6 +351,53 @@ const EpubViewer = forwardRef<EpubViewerRef, EpubViewerProps>(({
       }
     };
 
+    // --- MOTOR DE BÚSQUEDA INTERNO ---
+    window.searchTextInBook = function(query) {
+      if (!book) return;
+      
+      const cleanQuery = query.trim().toLowerCase();
+      if (cleanQuery.length < 3) return; // Evitar búsquedas absurdas de 1 o 2 letras
+
+      // Promesa para buscar en todos los ítems del esqueleto (spine)
+      const searchPromises = book.spine.spineItems.map(item => {
+        return item.load(book.load.bind(book))
+          .then(doc => {
+            const results = item.find(cleanQuery);
+            item.unload(); // Liberar memoria inmediatamente
+            
+            // Mapear los resultados de este capítulo
+            return results.map(result => {
+              // Intentamos conseguir el título del capítulo para el contexto de la UI
+              const nav = book.navigation.get(item.href);
+              const chapterLabel = nav && nav.label ? nav.label.trim() : "Capítulo " + (item.index + 1);
+
+              return {
+                cfi: result.cfi,
+                excerpt: result.excerpt, // Fragmento de texto que rodea la coincidencia
+                chapterTitle: chapterLabel
+              };
+            });
+          })
+          .catch(err => {
+            console.error("Error buscando en item:", item.href, err);
+            return [];
+          });
+      });
+
+      // Esperar a que se procesen todos los capítulos
+      Promise.all(searchPromises).then(allResults => {
+        // Aplanar el array de arrays de resultados
+        const flattenedResults = allResults.reduce((acc, val) => acc.concat(val), []);
+        
+        // Enviar los resultados de vuelta a React Native
+        window.ReactNativeWebView.postMessage(JSON.stringify({
+          type: 'search_results',
+          query: query,
+          results: flattenedResults
+        }));
+      });
+    };
+
     function triggerRelocated(location) {
       if (!location || !location.start) return;
       
@@ -476,7 +534,7 @@ const EpubViewer = forwardRef<EpubViewerRef, EpubViewerProps>(({
 
             const cfiParam = book.lastCfi ? `"${book.lastCfi}"` : 'null';
             const cfiIndexParam = cfiIndex ? JSON.stringify(cfiIndex) : 'null';
-            
+
             const js = `window.initBook("${base64Data}", ${fontSize}, "${theme}", ${cfiParam}, ${cfiIndexParam}); true;`;
             webViewRef.current?.injectJavaScript(js);
           } catch (err: any) {
@@ -501,11 +559,14 @@ const EpubViewer = forwardRef<EpubViewerRef, EpubViewerProps>(({
         case 'cover':
           onCoverExtracted?.(data.cover);
           break;
-        case 'text_selected': 
+        case 'text_selected':
           onTextSelected?.(data.text);
           break;
         case 'ready':
           setLoading(false);
+          break;
+        case 'search_results':
+          onSearchResults?.(data.results);
           break;
         case 'error':
           console.error('EPUB Error inside WebView:', data.message);

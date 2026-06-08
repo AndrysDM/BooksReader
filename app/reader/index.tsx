@@ -1,8 +1,8 @@
-import EpubViewer, { EpubViewerRef } from '@/components/reader/EpubViewer';
+import EpubViewer, { EpubViewerRef, SearchResult } from '@/components/reader/EpubViewer';
 import Slider from '@react-native-community/slider';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, FlatList, Modal, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, Text, TouchableOpacity, View } from 'react-native';
 import { useLibrary } from '../../context/LibraryContext';
 import { useTheme } from '../../context/ThemeContext';
 
@@ -13,7 +13,13 @@ import lemasData from '../../assets/lemas_en.json';
 import { getBookCache } from '@/utils/storage/queries/locations';
 import { BookCache } from '../../utils/storage/types';
 
+
+import ChaptersModal from '@/components/reader/ChaptersModal';
+import DictionaryModal from '@/components/reader/DictionaryModal';
 import styles from '@/components/reader/reader.styles';
+import ReaderHeader from '@/components/reader/ReaderHeader';
+import SearchResultsModal from '@/components/reader/SearchResultsModal';
+import SettingsModal from '@/components/reader/SettingsModal';
 // Tipamos el JSON para evitar quejas de TypeScript
 const diccionario: Record<string, string> = diccionarioData;
 const lemas: Record<string, string> = lemasData;
@@ -24,7 +30,7 @@ export default function ReaderScreen() {
 
   // 1. Extraemos solo lo que existe en tu interfaz tipada de LibraryContext
   const { books, updateProgress, deleteBook } = useLibrary();
-  const { colors, theme, toggleTheme, fontSize, setFontSize } = useTheme();
+  const { colors, theme, fontSize,  } = useTheme();
 
   const [showSettings, setShowSettings] = useState(false);
   const [showChapters, setShowChapters] = useState(false);
@@ -39,6 +45,13 @@ export default function ReaderScreen() {
   const [currentProgress, setCurrentProgress] = useState<number>(0);
 
   const [chapterTitle, setChapterTitle] = useState<string>('Capítulo');
+
+  //ESTADOS PARA LA BÚSQUEDA DE TEXTO
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [isSearching, setIsSearching] = useState<boolean>(false);
+  const [showSearchModal, setShowSearchModal] = useState<boolean>(false);
+  const [isSearchingText, setIsSearchingText] = useState<boolean>(false);
 
   const epubViewerRef = useRef<EpubViewerRef>(null);
 
@@ -86,7 +99,7 @@ export default function ReaderScreen() {
             if (Array.isArray(parsedCfis) && parsedCfis.length > 0) {
               setCfiCache(parsedCfis); // Guarda el array real en tu estado
             } else {
-              
+
             }
           } catch (parseError) {
             console.error('❌ Error al parsear cfiIndexCache desde la DB:', parseError);
@@ -162,6 +175,22 @@ export default function ReaderScreen() {
     setShowChapters(false);
   };
 
+  // ACCIÓN DISPARADORA DE BÚSQUEDA DESDE RN
+  const handleSearchText = () => {
+    if (searchQuery.trim().length < 3) return;
+    setIsSearching(true);
+    setSearchResults([]);
+    setShowSearchModal(true);
+    epubViewerRef.current?.search(searchQuery);
+  };
+
+  // MANEJADOR DE SELECCIÓN DE UN RESULTADO DE BÚSQUEDA
+  const handleSelectSearchResult = (cfi: string) => {
+    epubViewerRef.current?.goToChapter(cfi);
+    setShowSearchModal(false);
+    setIsSearchingText(false);
+  };
+
   const handleToggleControls = () => {
     setShowControls(prev => !prev);
   };
@@ -198,37 +227,26 @@ export default function ReaderScreen() {
         onProgressChange={handleProgressChange}
         onToggleControls={handleToggleControls}
         onTextSelected={handleTextSelected}
+        onSearchResults={(results) => {
+          setSearchResults(results);
+          setIsSearching(false);
+        }}
       />
 
       {/* Header (Slide/Overlay from Top) */}
       {showControls && (
-        <View style={[styles.header, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
-          <View style={styles.headerLeftContainer}>
-            <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
-              <Ionicons name="arrow-back" size={24} color={colors.text} />
-            </TouchableOpacity>
-            <View>
-              <Text style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1}>
-                {book.title}
-              </Text>
-              <Text style={[styles.headerAutor, { color: colors.secondaryText }]} numberOfLines={1}>
-                {book.author}
-              </Text>
-            </View>
-          </View>
-          <View style={styles.headerActions}>
-            <TouchableOpacity onPress={() => { }} style={styles.headerButton}>
-              <Ionicons name="search" size={24} color={colors.text} />
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => { }} style={styles.headerButton}>
-              <Ionicons name="bookmark-outline" size={24} color={colors.text} />
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => setShowSettings(true)} style={styles.headerButton}>
-              <Ionicons name="ellipsis-vertical-sharp" size={24} color={colors.text} />
-            </TouchableOpacity>
-
-          </View>
-        </View>
+        <ReaderHeader
+          bookTitle={book.title}
+          bookAuthor={book.author || 'Autor Desconocido'}
+          isSearchingText={isSearchingText}
+          setIsSearchingText={setIsSearchingText}
+          searchQuery={searchQuery}
+          setSearchQuery={setSearchQuery}
+          setSearchResults={setSearchResults}
+          handleSearchText={handleSearchText}
+          onBack={() => router.back()}
+          onShowSettings={() => setShowSettings(true)}
+        />
       )}
 
       {/* Panel Inferior Unificado de Progreso y Navegación (Ancho completo) */}
@@ -283,155 +301,37 @@ export default function ReaderScreen() {
       )}
 
       {/* Chapters Modal */}
-      <Modal
-        visible={showChapters}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowChapters(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: colors.card, maxHeight: '80%' }]}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: colors.text }]}>Capítulos</Text>
-              <TouchableOpacity onPress={() => setShowChapters(false)}>
-                <Text style={{ color: colors.text, fontSize: 24 }}>✕</Text>
-              </TouchableOpacity>
-            </View>
-
-            <FlatList
-              // Planeamos el árbol de capítulos dinámicamente aquí
-              data={chapters}
-              keyExtractor={(item, index) => `${item.href}-${index}`}
-              renderItem={({ item }) => {
-                // Definimos una sangría dinámica según el nivel de anidación (0 para principal, 1 para subcapítulo, etc.)
-                const indentation = (item.level || 0) * 20;
-
-                return (
-                  <TouchableOpacity
-                    style={[
-                      styles.chapterItem,
-                      {
-                        borderBottomColor: colors.border,
-                        paddingLeft: 16 + indentation // Aplica el espacio a la izquierda
-                      }
-                    ]}
-                    onPress={() => handleGoToChapter(item.href)}
-                  >
-                    <Text
-                      style={[
-                        item.level > 0 ? styles.subChapterLabel : styles.chapterLabel,
-                        { color: item.level > 0 ? colors.secondaryText : colors.text }
-                      ]}
-                    >
-                      {item.title}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              }}
-              ListEmptyComponent={
-                <Text style={[styles.emptyChaptersText, { color: colors.secondaryText }]}>
-                  No se encontraron capítulos o el libro se está cargando.
-                </Text>
-              }
-            />
-          </View>
-        </View>
-      </Modal>
+      <ChaptersModal
+        isVisible={showChapters}
+        onClose={() => setShowChapters(false)}
+        chapters={chapters}
+        onSelectChapter={handleGoToChapter}
+      />
 
       {/* Settings Modal */}
-      <Modal
-        visible={showSettings}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowSettings(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: colors.text }]}>Configuración</Text>
-              <TouchableOpacity onPress={() => setShowSettings(false)}>
-                <Text style={{ color: colors.text, fontSize: 24 }}>✕</Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Theme Toggle */}
-            <View style={styles.settingRow}>
-              <Text style={[styles.settingLabel, { color: colors.text }]}>Tema</Text>
-              <TouchableOpacity
-                onPress={toggleTheme}
-                style={[styles.themeToggle, { backgroundColor: colors.primary }]}
-              >
-                <Text style={styles.themeToggleText}>{theme === 'light' ? '🌙 Oscuro' : '☀️ Claro'}</Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Font Size */}
-            <View style={styles.settingRow}>
-              <Text style={[styles.settingLabel, { color: colors.text }]}>Tamaño de fuente</Text>
-              <View style={styles.fontSizeControls}>
-                <TouchableOpacity
-                  onPress={() => setFontSize(Math.max(12, fontSize - 2))}
-                  style={[styles.fontButton, { backgroundColor: colors.border }]}
-                >
-                  <Text style={{ fontSize: 18, color: colors.text }}>A-</Text>
-                </TouchableOpacity>
-                <Text style={[styles.fontSizeValue, { color: colors.text }]}>{fontSize}px</Text>
-                <TouchableOpacity
-                  onPress={() => setFontSize(Math.min(32, fontSize + 2))}
-                  style={[styles.fontButton, { backgroundColor: colors.border }]}
-                >
-                  <Text style={{ fontSize: 18, color: colors.text }}>A+</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            {/* Progress Info */}
-            <View style={{ flexDirection: 'row', width: '100%', justifyContent: 'space-between', alignItems: 'center', borderTopWidth: 1, }}>
-              <View style={styles.progressInfo}>
-                <Text style={[styles.progressLabel, { color: colors.secondaryText }]}>Progreso actual</Text>
-                <Text style={[styles.progressValue, { color: colors.text }]}>{currentProgress}% completado</Text>
-              </View >
-              <TouchableOpacity
-                onPress={handleDeleteBook}
-                style={[styles.themeToggle, { backgroundColor: '#ff4d4d', marginTop: 20 }]}
-              >
-                <Ionicons name="trash" size={18} color="#fff" />
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
+      <SettingsModal
+        isVisible={showSettings}
+        onClose={() => setShowSettings(false)}
+        currentProgress={currentProgress}
+        onDeleteBook={handleDeleteBook}
+      />
       {/* Dictionary Floating Modal (Quick Lookup) */}
-      <Modal
-        visible={showDictionaryModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowDictionaryModal(false)}
-      >
-        <TouchableOpacity
-          style={styles.dictionaryOverlay}
-          activeOpacity={1}
-          onPress={() => setShowDictionaryModal(false)}
-        >
-          <View style={[styles.dictionaryContent, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <View style={styles.dictionaryHeader}>
-              <Text style={[styles.dictionaryWord, { color: colors.text }]} numberOfLines={1}>
-                <Ionicons name="search" size={20} color={colors.text} /> {selectedText}
-              </Text>
-              <TouchableOpacity
-                style={styles.closeDictionaryButton}
-                onPress={() => setShowDictionaryModal(false)}
-              >
-                <Ionicons name="close" size={24} color={colors.secondaryText} />
-              </TouchableOpacity>
-            </View>
+      <DictionaryModal
+        isVisible={showDictionaryModal}
+        onClose={() => setShowDictionaryModal(false)}
+        selectedText={selectedText}
+        translation={translation}
+      />
 
-            <Text style={[styles.dictionaryTranslation, { color: colors.text }]}>
-              {translation}
-            </Text>
-          </View>
-        </TouchableOpacity>
-      </Modal>
+      {/* --- MODAL INFERIOR DE RESULTADOS DE BÚSQUEDA --- */}
+      <SearchResultsModal
+        isVisible={showSearchModal}
+        onClose={() => setShowSearchModal(false)}
+        searchQuery={searchQuery}
+        isSearching={isSearching}
+        searchResults={searchResults}
+        onSelectResult={handleSelectSearchResult}
+      />
     </View>
   );
 }
