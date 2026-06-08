@@ -1,15 +1,17 @@
 import EpubViewer, { EpubViewerRef } from '@/components/reader/EpubViewer';
 import Slider from '@react-native-community/slider';
-import * as NavigationBar from 'expo-navigation-bar';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useEffect, useRef, useState } from 'react';
-import { Alert, FlatList, Modal, Platform, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Alert, FlatList, Modal, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useLibrary } from '../../context/LibraryContext';
 import { useTheme } from '../../context/ThemeContext';
 
 import { Ionicons } from '@expo/vector-icons';
 import diccionarioData from '../../assets/diccionario_produccion.json'; // Ajusta la ruta a tu carpeta assets
 import lemasData from '../../assets/lemas_en.json';
+
+import { getBookCache } from '@/utils/storage/queries/locations';
+import { BookCache } from '../../utils/storage/types';
 
 // Tipamos el JSON para evitar quejas de TypeScript
 const diccionario: Record<string, string> = diccionarioData;
@@ -18,60 +20,95 @@ const lemas: Record<string, string> = lemasData;
 export default function ReaderScreen() {
   const params = useLocalSearchParams();
   const router = useRouter();
-  const { books, updateProgress, deleteBook, updateBook } = useLibrary();
+
+  // 1. Extraemos solo lo que existe en tu interfaz tipada de LibraryContext
+  const { books, updateProgress, deleteBook } = useLibrary();
   const { colors, theme, toggleTheme, fontSize, setFontSize } = useTheme();
 
   const [showSettings, setShowSettings] = useState(false);
   const [showChapters, setShowChapters] = useState(false);
-  const [chapters, setChapters] = useState<{ label: string; href: string }[]>([]);
+
+
+  const [chapters, setChapters] = useState<{ title: string; href: string; level: number }[]>([]);
   const [showControls, setShowControls] = useState(false);
 
   // Progress states
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [totalPages, setTotalPages] = useState<number>(1);
   const [currentProgress, setCurrentProgress] = useState<number>(0);
+
   const [chapterTitle, setChapterTitle] = useState<string>('Capítulo');
 
   const epubViewerRef = useRef<EpubViewerRef>(null);
-  const book = books.find(b => b.id === params.id);
+
+  // Convertimos de forma segura el ID string de la URL a número para SQLite
+  const book = books.find(b => b.id === Number(params.id));
 
   const [selectedText, setSelectedText] = useState<string>('');
   const [translation, setTranslation] = useState<string>('');
   const [showDictionaryModal, setShowDictionaryModal] = useState<boolean>(false);
 
+  const [cfiCache, setCfiCache] = useState<string[] | null>(null);
+  const flattenChapters = useCallback((navItems: any[], level = 0): any[] => {
+    if (!navItems || !Array.isArray(navItems)) return [];
 
+    let flatList: any[] = [];
 
-  // Manage Status Bar and Navigation Bar visibility based on controls toggle
+    navItems.forEach((item) => {
+      flatList.push({
+        title: item.title || 'Capítulo',
+        href: item.href,
+        level: level
+      });
+
+      if (item.subitems && Array.isArray(item.subitems) && item.subitems.length > 0) {
+        // Nota cómo llamamos a la función interna de forma recursiva de forma segura
+        flatList = flatList.concat(flattenChapters(item.subitems, level + 1));
+      }
+    });
+
+    return flatList;
+  }, []);
+
   useEffect(() => {
-    const toggleSystemUI = async () => {
+    async function loadCachedData() {
       try {
-        if (showControls) {
-          StatusBar.setHidden(false, 'slide');
-          if (Platform.OS === 'android') {
-            await NavigationBar.setVisibilityAsync('visible');
+        // 1. Buscamos si este libro ya tiene caché en SQLite
+        const cache: BookCache | null = await getBookCache(book?.id || 0);
+
+        if (cache && cache.cfiIndexCache) {
+          try {
+            const parsedCfis = typeof cache.cfiIndexCache === 'string'
+              ? JSON.parse(cache.cfiIndexCache)
+              : cache.cfiIndexCache;
+
+            if (Array.isArray(parsedCfis) && parsedCfis.length > 0) {
+              setCfiCache(parsedCfis); // Guarda el array real en tu estado
+            } else {
+              
+            }
+          } catch (parseError) {
+            console.error('❌ Error al parsear cfiIndexCache desde la DB:', parseError);
           }
         } else {
-          StatusBar.setHidden(true, 'slide');
-          if (Platform.OS === 'android') {
-            await NavigationBar.setVisibilityAsync('hidden');
-            await NavigationBar.setBehaviorAsync('overlay-swipe');
-          }
+          console.log('⏳ No hay caché de CFIs (locations). Se generarán en el WebView.');
+        }
+
+        if (cache && cache.tocCache && cache.tocCache.length > 0) {
+          const flatChapters = flattenChapters(cache.tocCache);
+          setChapters(flatChapters);
+        } else {
+          console.log('⏳ No hay caché de capítulos. Te jodes.');
         }
       } catch (error) {
-        console.warn('System UI NavigationBar error:', error);
+        console.error('Error al cargar la caché del libro:', error);
       }
-    };
+    }
 
-    toggleSystemUI();
-
-    // Restore UI when leaving reader screen
-    return () => {
-      StatusBar.setHidden(false);
-      if (Platform.OS === 'android') {
-        NavigationBar.setVisibilityAsync('visible');
-      }
-    };
-  }, [showControls]);
+    if (book?.id) {
+      loadCachedData();
+    }
+  }, [book?.id, flattenChapters]);
 
   if (!book) {
     return (
@@ -81,37 +118,35 @@ export default function ReaderScreen() {
     );
   }
 
-  const handleProgressChange = async (progress: number, chapter: number, cfi?: string, details?: any) => {
+  // 2. CORREGIDO: Orden de parámetros ajustado a la firma de tu base de datos SQLite
+  const handleProgressChange = async (progress: number, chapter: string, cfi: string, details?: any) => {
     setCurrentProgress(progress);
     if (details) {
       if (details.currentPage) setCurrentPage(details.currentPage);
       if (details.totalPages) setTotalPages(details.totalPages);
       if (details.chapterTitle) setChapterTitle(details.chapterTitle);
     }
-    await updateProgress(book.id, progress, chapter, cfi);
+    // updateProgress espera: (id, progress, lastCfi, lastChapterTitle)
+    await updateProgress(book.id, progress, cfi, chapter);
   };
+
   const handleTextSelected = (text: string) => {
-    // Limpieza de puntuación
-    const palabraLimpia = text.toLowerCase().replace(/^[.,\/#!$%\^&\*;:{}=\-_`~()¿?¡!«»"']+|[.,\/#!$%\^&\*;:{}=\-_`~()¿?¡!«»"']+$/g, "").trim();
+    const palabraLimpia = text.toLowerCase().replace(/^[.,\/#!$%\^&\*;:{}=\-_`~()¿?¡!«»"']+|[.,\/#!$%\^&\*;:{}=\-_`~()¿?¡!«»"']+/g, "").trim();
 
     if (!palabraLimpia) return;
 
     let resultado = null;
 
-    // 1. Búsqueda directa
     if (diccionario[palabraLimpia]) {
       resultado = diccionario[palabraLimpia];
-    }
-    // 2. Búsqueda por Lema (si no se encontró directa)
-    else {
-      const formaBase = lemas[palabraLimpia]; // Buscamos si tiene un lema
+    } else {
+      const formaBase = lemas[palabraLimpia];
       if (formaBase && diccionario[formaBase]) {
         resultado = diccionario[formaBase];
         console.log(`Lema encontrado: ${palabraLimpia} -> ${formaBase}`);
       }
     }
 
-    // Si después de todo no encontramos nada
     if (!resultado) {
       resultado = "No se encontró una traducción exacta para esta palabra.";
     }
@@ -120,13 +155,6 @@ export default function ReaderScreen() {
     setTranslation(resultado);
     setShowDictionaryModal(true);
   };
-  // const handlePrevPage = () => {
-  //   epubViewerRef.current?.prevPage();
-  // };
-
-  // const handleNextPage = () => {
-  //   epubViewerRef.current?.nextPage();
-  // };
 
   const handleGoToChapter = (href: string) => {
     epubViewerRef.current?.goToChapter(href);
@@ -135,12 +163,6 @@ export default function ReaderScreen() {
 
   const handleToggleControls = () => {
     setShowControls(prev => !prev);
-  };
-
-  const handleCoverExtracted = async (coverBase64: string) => {
-    if (book && !book.cover) {
-      await updateBook(book.id, { cover: coverBase64 });
-    }
   };
 
   const handleDeleteBook = () => {
@@ -161,27 +183,7 @@ export default function ReaderScreen() {
     );
   };
 
-  // Función para convertir la estructura de árbol en una lista plana fácil de leer por FlatList
-  const flattenChapters = (navItems: any[], level = 0): any[] => {
-    if (!navItems || !Array.isArray(navItems)) return [];
-
-    let flatList: any[] = [];
-
-    navItems.forEach((item) => {
-      flatList.push({
-        label: item.label,
-        href: item.href,
-        level: level
-      });
-
-      // Verificamos de forma segura si tiene subcapítulos
-      if (item.subitems && Array.isArray(item.subitems) && item.subitems.length > 0) {
-        flatList = flatList.concat(flattenChapters(item.subitems, level + 1));
-      }
-    });
-
-    return flatList;
-  };
+  // 3. CORREGIDO: Cambiado item.label por item.title para leer el TOC correctamente
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -191,10 +193,9 @@ export default function ReaderScreen() {
         book={book}
         fontSize={fontSize}
         theme={theme}
+        cfiIndex={cfiCache}
         onProgressChange={handleProgressChange}
-        onNavigationLoaded={setChapters}
         onToggleControls={handleToggleControls}
-        onCoverExtracted={handleCoverExtracted}
         onTextSelected={handleTextSelected}
       />
 
@@ -243,7 +244,7 @@ export default function ReaderScreen() {
                 Pág. {currentPage}/{totalPages}
               </Text>
               <Text style={[styles.progressStatText, { color: colors.secondaryText, marginLeft: 8 }]}>
-                ({currentProgress}%)
+                ({Math.round(currentProgress * 100)}%)
               </Text>
             </View>
           </View>
@@ -298,7 +299,7 @@ export default function ReaderScreen() {
 
             <FlatList
               // Planeamos el árbol de capítulos dinámicamente aquí
-              data={flattenChapters(chapters)}
+              data={chapters}
               keyExtractor={(item, index) => `${item.href}-${index}`}
               renderItem={({ item }) => {
                 // Definimos una sangría dinámica según el nivel de anidación (0 para principal, 1 para subcapítulo, etc.)
@@ -321,7 +322,7 @@ export default function ReaderScreen() {
                         { color: item.level > 0 ? colors.secondaryText : colors.text }
                       ]}
                     >
-                      {item.label}
+                      {item.title}
                     </Text>
                   </TouchableOpacity>
                 );
@@ -384,7 +385,7 @@ export default function ReaderScreen() {
             </View>
 
             {/* Progress Info */}
-            <View style={{ flexDirection: 'row', width: '100%', justifyContent: 'space-between', alignItems: 'center', borderTopWidth: 1,}}>
+            <View style={{ flexDirection: 'row', width: '100%', justifyContent: 'space-between', alignItems: 'center', borderTopWidth: 1, }}>
               <View style={styles.progressInfo}>
                 <Text style={[styles.progressLabel, { color: colors.secondaryText }]}>Progreso actual</Text>
                 <Text style={[styles.progressValue, { color: colors.text }]}>{currentProgress}% completado</Text>

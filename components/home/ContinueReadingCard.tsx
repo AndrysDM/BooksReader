@@ -1,17 +1,9 @@
 import { Ionicons } from '@expo/vector-icons'; // Asegúrate de usar tu librería de iconos interna
 import React from 'react';
 import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-
+import { Book } from '../../utils/storage/types'; // Asegúrate de que esta ruta sea correcta
 // Interfaz local del Libro (puedes importarla si ya la tienes global)
-export interface Book {
-  id: string;
-  title: string;
-  author: string;
-  cover?: string;
-  progress: number;
-  currentChapter?: string | number;
-  lastOpened?: string;
-}
+
 
 interface ContinueReadingCardProps {
   book: Book;
@@ -63,8 +55,8 @@ export const ContinueReadingCard: React.FC<ContinueReadingCardProps> = ({ book, 
         onPress={onPress}
         activeOpacity={0.85}
       >
-        {book.cover ? (
-          <Image source={{ uri: book.cover }} style={styles.continueCover} />
+        {book.coverUrl ? (
+          <Image source={{ uri: book.coverUrl }} style={styles.continueCover} />
         ) : (
           <View style={[styles.continueCover, { backgroundColor: colors.border || '#E0E0E0', justifyContent: 'center', alignItems: 'center' }]}>
             <Ionicons name="book-outline" size={32} color={colors.secondaryText} />
@@ -82,9 +74,9 @@ export const ContinueReadingCard: React.FC<ContinueReadingCardProps> = ({ book, 
           
           <BookProgressBar progress={book.progress} colors={colors} />
           
-          {book.currentChapter !== undefined && (
+          {book.lastChapterTitle !== undefined && (
             <Text style={[styles.continueChapter, { color: colors.secondaryText }]} numberOfLines={1}>
-              Capítulo {book.currentChapter}
+              {book.lastChapterTitle}
             </Text>
           )}
         </View>

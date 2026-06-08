@@ -1,15 +1,16 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { storage, fileHandler, Book } from '../utils/storage';
+import React, { createContext, ReactNode, useContext, useEffect, useState } from 'react';
+import { fileHandler } from '../utils/storage';
+import * as bookQueries from '../utils/storage/queries/books';
+import { Book } from '../utils/storage/types';
 
 interface LibraryContextType {
   books: Book[];
   loading: boolean;
   refreshBooks: () => Promise<void>;
-  addBook: (book: Book) => Promise<void>;
-  updateBook: (id: string, updates: Partial<Book>) => Promise<void>;
-  deleteBook: (id: string) => Promise<void>;
-  toggleFavorite: (id: string) => Promise<void>;
-  updateProgress: (id: string, progress: number, chapter: number, cfi?: string) => Promise<void>;
+  addBook: (book: Omit<Book, 'id' | 'createdAt' | 'lastReadAt' | 'lastCfi' | 'lastChapterTitle' | 'progress' | 'isFavorite'>) => Promise<number>;
+  deleteBook: (id: number) => Promise<void>;
+  toggleFavorite: (id: number) => Promise<void>;
+  updateProgress: (id: number, progress: number, lastCfi: string, lastChapterTitle: string) => Promise<void>;
 }
 
 const LibraryContext = createContext<LibraryContextType | undefined>(undefined);
@@ -19,16 +20,27 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    loadBooks();
-  }, []);
+    async function initAndLoad() {
+      try {
+        await fileHandler.init(); // Inicializa el directorio físico de ePubs
+        const loadedBooks = await bookQueries.getBooks();
+        setBooks(loadedBooks);
+      } catch (error) {
+        console.error('Error inicializando la biblioteca:', error);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    initAndLoad();
+  }, []); 
 
   async function loadBooks() {
     try {
-      await fileHandler.init();
-      const loadedBooks = await storage.getBooks();
+      const loadedBooks = await bookQueries.getBooks();
       setBooks(loadedBooks);
     } catch (error) {
-      console.error('Error loading books:', error);
+      console.error('Error cargando libros desde SQLite:', error);
     } finally {
       setLoading(false);
     }
@@ -38,32 +50,28 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     await loadBooks();
   }
 
-  async function addBook(book: Book) {
-    await storage.addBook(book);
+  async function addBook(book: Omit<Book, 'id' | 'createdAt' | 'lastReadAt' | 'lastCfi' | 'lastChapterTitle' | 'progress' | 'isFavorite'>): Promise<number> {
+    const insertedId = await bookQueries.addBook(book);
     await loadBooks();
+    return insertedId;
   }
 
-  async function updateBook(id: string, updates: Partial<Book>) {
-    await storage.updateBook(id, updates);
-    await loadBooks();
-  }
-
-  async function deleteBook(id: string) {
+  async function deleteBook(id: number) {
     const book = books.find(b => b.id === id);
     if (book) {
       await fileHandler.deleteBookFile(book.filePath);
     }
-    await storage.deleteBook(id);
+    await bookQueries.deleteBook(id);
     await loadBooks();
   }
 
-  async function toggleFavorite(id: string) {
-    await storage.toggleFavorite(id);
+  async function toggleFavorite(id: number) {
+    await bookQueries.toggleFavorite(id);
     await loadBooks();
   }
 
-  async function updateProgress(id: string, progress: number, chapter: number, cfi?: string) {
-    await storage.updateProgress(id, progress, chapter, cfi);
+  async function updateProgress(id: number, progress: number, lastCfi: string, lastChapterTitle: string) {
+    await bookQueries.updateProgress(id, progress, lastCfi, lastChapterTitle);
     await loadBooks();
   }
 
@@ -73,7 +81,6 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       loading,
       refreshBooks,
       addBook,
-      updateBook,
       deleteBook,
       toggleFavorite,
       updateProgress,

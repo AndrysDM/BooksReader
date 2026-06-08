@@ -9,8 +9,9 @@ import { ActivityIndicator, Alert, FlatList, Modal, StyleSheet, Text, TouchableO
 import { WebView } from 'react-native-webview';
 import { useLibrary } from '../../context/LibraryContext';
 import { useTheme } from '../../context/ThemeContext';
-import { Book, fileHandler } from '../../utils/storage';
-
+import { fileHandler } from '../../utils/storage';
+import { saveBookCache } from '../../utils/storage/queries/locations';
+import { Book } from '../../utils/storage/types';
 const extractorHtml = `
 <!DOCTYPE html>
 <html>
@@ -25,7 +26,7 @@ const extractorHtml = `
       window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'ready_to_receive' }));
     };
 
-    window.extractMetadata = function(base64Data) {
+    window.extractMetadata = async function(base64Data) {
       try {
         const binaryString = atob(base64Data);
         const len = binaryString.length;
@@ -35,45 +36,70 @@ const extractorHtml = `
         }
         
         const book = ePub(bytes.buffer);
-        let extractedTitle = "";
-        let extractedAuthor = "Autor desconocido";
+        await book.ready;
+        
+        // 1. Extraer Metadatos
+        const metadata = book.package.metadata;
+        const extractedTitle = metadata.title || "";
+        const extractedAuthor = metadata.creator || "Autor desconocido";
 
-        book.ready.then(() => {
-          const metadata = book.package.metadata;
-          extractedTitle = metadata.title || "";
-          extractedAuthor = metadata.creator || "Autor desconocido";
-          return book.coverUrl();
-        }).then((url) => {
+        // 2. Extraer Árbol de Navegación con TU lógica recursiva original
+        function mapNavigationTree(items) {
+          if (!items) return undefined;
+          return items.map(chap => {
+            const mapped = {
+              title: chap.label ? chap.label.trim() : 'Capítulo',
+              href: chap.href
+            };
+            if (chap.subitems && chap.subitems.length > 0) {
+              mapped.subitems = mapNavigationTree(chap.subitems);
+            }
+            return mapped;
+          });
+        }
+
+        const tocTree = book.navigation && book.navigation.toc 
+          ? mapNavigationTree(book.navigation.toc) 
+          : [];
+
+        // 3. GENERAR UBICACIONES (El cuello de botella)
+        let locationsArray = [];
+        try {
+          // El culpable de la lentitud está aquí abajo
+          await book.locations.generate(1500);
+          locationsArray = book.locations.save(); 
+        } catch (locErr) {
+          console.error("Error generando locaciones:", locErr);
+        }
+
+        // 4. Extraer Imagen de Portada
+        let coverBase64 = null;
+        try {
+          const url = await book.coverUrl();
           if (url) {
-            return fetch(url)
-              .then(response => response.blob())
-              .then(blob => {
-                return new Promise((resolve) => {
-                  const reader = new FileReader();
-                  reader.onloadend = function() {
-                    resolve(reader.result);
-                  };
-                  reader.readAsDataURL(blob);
-                });
-              });
+            const response = await fetch(url);
+            const blob = await response.blob();
+            coverBase64 = await new Promise((resolve) => {
+              const reader = new FileReader();
+              reader.onloadend = function() {
+                resolve(reader.result);
+              };
+              reader.readAsDataURL(blob);
+            });
           }
-          return null;
-        }).then((coverBase64) => {
-          window.ReactNativeWebView.postMessage(JSON.stringify({
-            type: 'metadata_extracted',
-            title: extractedTitle,
-            author: extractedAuthor,
-            cover: coverBase64
-          }));
-        }).catch((err) => {
-          window.ReactNativeWebView.postMessage(JSON.stringify({
-            type: 'metadata_extracted',
-            title: extractedTitle || "Libro importado",
-            author: extractedAuthor || "Autor desconocido",
-            cover: null,
-            error: err.message
-          }));
-        });
+        } catch (coverErr) {
+          console.error("Error procesando portada:", coverErr);
+        }
+
+        // 5. Enviar respuesta
+        window.ReactNativeWebView.postMessage(JSON.stringify({
+          type: 'metadata_extracted',
+          title: extractedTitle,
+          author: extractedAuthor,
+          cover: coverBase64,
+          locations: locationsArray,
+          toc: tocTree
+        }));
 
       } catch (error) {
         window.ReactNativeWebView.postMessage(JSON.stringify({
@@ -88,12 +114,12 @@ const extractorHtml = `
 `;
 
 // Variable global en memoria para registrar el último ID abierto en la sesión actual
-let globalLastOpenedBookId: string | null = null;
+let globalLastOpenedBookId: number | null = null;
 
 export default function LibraryScreen() {
   const router = useRouter();
   const navigation = useNavigation(); // Hook para escuchar eventos de navegación
-  const { books, addBook, toggleFavorite, updateBook } = useLibrary();
+  const { books, addBook, toggleFavorite, updateProgress } = useLibrary();
   const { colors } = useTheme();
   const [filter, setFilter] = useState<'all' | 'favorites'>('all');
   const [filterDropdownVisible, setFilterDropdownVisible] = useState(false);
@@ -118,16 +144,23 @@ export default function LibraryScreen() {
 
   // Función para abrir el libro guardando el ID de inmediato
   const handleOpenBook = async (book: Book) => {
-    globalLastOpenedBookId = book.id; // Guardado síncrono instantáneo
+    globalLastOpenedBookId = book.id; // Ahora book.id es un 'number'
+
     try {
-      if (updateBook) {
-        await updateBook(book.id, {
-          lastOpened: new Date().toISOString(),
-        });
+      if (updateProgress) {
+        // Pasamos el progreso, CFI y capítulo actuales para que SQLite 
+        // solo actualice la fecha de última lectura ('last_read_at')
+        await updateProgress(
+          book.id,
+          book.progress,
+          book.lastCfi || '',
+          book.lastChapterTitle || ''
+        );
       }
     } catch (error) {
-      console.error('Error al actualizar la fecha lastOpened:', error);
+      console.error('Error al actualizar la fecha de última lectura:', error);
     }
+
     router.push(`/reader?id=${book.id}`);
   };
 
@@ -176,24 +209,50 @@ export default function LibraryScreen() {
         } else {
           fallbackImport();
         }
-      } else if (data.type === 'metadata_extracted') {
-        const newBook: Book = {
-          id: Date.now().toString(),
+      }
+
+      else if (data.type === 'metadata_extracted') {
+        let finalCoverUrl: string | null = null;
+
+        // 1. Si el extractor encontró una portada en Base64, la guardamos física en disco
+        if (data.cover) {
+          try {
+            const coverFilename = `${Date.now()}_cover`;
+            finalCoverUrl = await fileHandler.saveCoverImage(data.cover, coverFilename);
+          } catch (coverErr) {
+            console.error('Error saving cover image file, ignoring:', coverErr);
+            // Si falla la portada, no rompemos la importación completa, se queda en null
+          }
+        }
+
+        // 2. Preparamos el objeto limpio con el tipado estricto que espera SQLite
+        const bookData = {
           title: data.title || tempBookFilename.replace('.epub', ''),
           author: data.author || 'Autor desconocido',
-          cover: data.cover || undefined,
+          coverUrl: finalCoverUrl, // Ruta física local (file://...)
           filePath: tempBookPath!,
-          importDate: new Date().toISOString(),
-          progress: 0,
-          currentChapter: 0,
-          isFavorite: false,
-          totalChapters: 1,
         };
 
-        await addBook(newBook);
+        // 3. Insertamos el libro en SQLite y obtenemos el ID numérico autogenerado
+        const insertedBookId = await addBook(bookData);
+        // 4. Guardamos los datos pesados en la caché unificada (locations y TOC)
+        // Asumimos que data.locations es el array de strings CFI y data.toc es el árbol de navegación
+        const locationsArray = data.locations || [];
+        const tocTree = data.toc || [];
+
+        if (locationsArray.length > 0 || tocTree.length > 0) {
+          try {
+            await saveBookCache(insertedBookId, locationsArray, tocTree);
+          } catch (cacheErr) {
+            console.error('Error saving book heavy cache:', cacheErr);
+          }
+        }
+
         cleanupImport();
         Alert.alert('Éxito', 'Libro importado correctamente');
-      } else if (data.type === 'error') {
+      }
+
+      else if (data.type === 'error') {
         console.error('Metadata extractor JavaScript error:', data.message);
         fallbackImport();
       }
@@ -205,19 +264,26 @@ export default function LibraryScreen() {
 
   const fallbackImport = async () => {
     if (tempBookPath) {
-      const newBook: Book = {
-        id: Date.now().toString(),
-        title: tempBookFilename.replace('.epub', ''),
-        author: 'Autor desconocido',
-        filePath: tempBookPath,
-        importDate: new Date().toISOString(),
-        progress: 0,
-        currentChapter: 0,
-        isFavorite: false,
-        totalChapters: 1,
-      };
-      await addBook(newBook);
-      Alert.alert('Importado', 'Libro importado (no se pudieron extraer todos los metadatos)');
+      try {
+        // Preparamos los datos mínimos obligatorios para SQLite
+        const bookData = {
+          title: tempBookFilename.replace('.epub', ''),
+          author: 'Autor desconocido',
+          coverUrl: null, // No se pudieron extraer metadatos, se queda sin portada
+          filePath: tempBookPath,
+        };
+
+        // Guardamos el libro en la base de datos
+        await addBook(bookData);
+
+        Alert.alert(
+          'Importado',
+          'Libro importado (no se pudieron extraer todos los metadatos)'
+        );
+      } catch (error) {
+        console.error('Error en fallbackImport al guardar en SQLite:', error);
+        Alert.alert('Error', 'No se pudo guardar el libro en la base de datos.');
+      }
     }
     cleanupImport();
   };
@@ -234,24 +300,25 @@ export default function LibraryScreen() {
 
   // Re-evalúa y rompe referencias viejas de los libros usando la refreshKey
   const filteredBooks = useMemo(() => {
-    const list = filter === 'all' ? books : books.filter(book => book.isFavorite);
-    return [...list]; // Copia superficial para forzar refresco visual en las tarjetas principales
+    return filter === 'all' ? books : books.filter(book => book.isFavorite);
   }, [books, filter, refreshKey]);
 
   // Selección inteligente del libro en lectura activa
   const currentReadingBook = useMemo(() => {
 
-    // 1. Prioridad: Si coincide con el ID guardado en memoria en esta sesión
-    if (globalLastOpenedBookId) {
+    // 1. Prioridad: Si coincide con el ID numérico guardado en memoria en esta sesión
+    if (globalLastOpenedBookId !== null) {
       const lastBook = books.find(book => book.id === globalLastOpenedBookId);
       if (lastBook) return lastBook;
     }
 
-    // 2. Fallback: Ordenar por fecha 'lastOpened'
+    // 2. Fallback: Usar el libro leído más recientemente (las fechas ya son objetos Date)
+    if (books.length === 0) return undefined;
+
     return [...books].sort((a, b) => {
-      const timeA = a.lastOpened ? new Date(a.lastOpened).getTime() : 0;
-      const timeB = b.lastOpened ? new Date(b.lastOpened).getTime() : 0;
-      return timeB - timeA;
+      const timeA = a.lastReadAt ? a.lastReadAt.getTime() : 0;
+      const timeB = b.lastReadAt ? b.lastReadAt.getTime() : 0;
+      return timeB - timeA; // Orden descendente (más reciente primero)
     })[0];
   }, [books, refreshKey]);
 
@@ -357,7 +424,7 @@ export default function LibraryScreen() {
         key={numColumns}
         data={filteredBooks}
         numColumns={numColumns}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item) => item.id.toString()} // Aseguramos que el ID es string para FlatList
         removeClippedSubviews={false}
         renderItem={({ item }) => (
           <BookCard

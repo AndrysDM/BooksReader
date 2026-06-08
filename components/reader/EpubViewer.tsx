@@ -3,7 +3,7 @@ import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } f
 import { ActivityIndicator, Alert, StyleSheet, View } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { useTheme } from '../../context/ThemeContext';
-import { Book } from '../../utils/storage';
+import { Book } from '../../utils/storage/types';
 
 export interface EpubViewerRef {
   nextPage: () => void;
@@ -16,17 +16,19 @@ interface EpubViewerProps {
   book: Book;
   fontSize: number;
   theme: 'light' | 'dark';
-  onProgressChange?: (progress: number, chapter: number, cfi?: string, details?: any) => void;
-  onNavigationLoaded?: (toc: { label: string; href: string }[]) => void;
+  onProgressChange?: (progress: number, chapter: string, cfi: string, details?: any) => void;
+  onNavigationLoaded?: (toc: { title: string; href: string; level?: number }[]) => void;
   onToggleControls?: () => void;
   onCoverExtracted?: (cover: string) => void;
   onTextSelected?: (text: string) => void;
+  cfiIndex: string[] | null; // Caché de ubicaciones recibido de SQLite
 }
 
 const EpubViewer = forwardRef<EpubViewerRef, EpubViewerProps>(({
   book,
   fontSize,
   theme,
+  cfiIndex,
   onProgressChange,
   onNavigationLoaded,
   onToggleControls,
@@ -37,7 +39,6 @@ const EpubViewer = forwardRef<EpubViewerRef, EpubViewerProps>(({
   const [loading, setLoading] = useState(true);
   const { colors } = useTheme();
 
-  // Expose methods to the parent component
   useImperativeHandle(ref, () => ({
     nextPage() {
       webViewRef.current?.injectJavaScript('window.nextPage(); true;');
@@ -48,25 +49,17 @@ const EpubViewer = forwardRef<EpubViewerRef, EpubViewerProps>(({
     goToChapter(href) {
       webViewRef.current?.injectJavaScript(`window.goToChapter("${href}"); true;`);
     },
-    goToPercentage(percentage) { // <- Agrega este bloque
-      webViewRef.current?.injectJavaScript(`
-      if (rendition && book && book.locations) {
-        const cfi = book.locations.cfiFromPercentage(${percentage});
-        if (cfi) rendition.display(cfi);
-      }
-      true;
-    `);
+    goToPercentage(percentage) {
+      webViewRef.current?.injectJavaScript(`window.goToPercentage(${percentage}); true;`);
     }
   }));
 
-  // Listen for font size changes
   useEffect(() => {
     if (!loading && webViewRef.current) {
       webViewRef.current.injectJavaScript(`window.applyFontSize(${fontSize}); true;`);
     }
   }, [fontSize, loading]);
 
-  // Listen for theme changes
   useEffect(() => {
     if (!loading && webViewRef.current) {
       webViewRef.current.injectJavaScript(`window.changeTheme('${theme}'); true;`);
@@ -123,7 +116,7 @@ const EpubViewer = forwardRef<EpubViewerRef, EpubViewerProps>(({
       window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'ready_to_receive' }));
     };
 
-    window.initBook = function(base64Data, initialFontSize, initialTheme, initialCfi) {
+    window.initBook = function(base64Data, initialFontSize, initialTheme, initialCfi, cfiIndexRaw) {
       try {
         const binaryString = atob(base64Data);
         const len = binaryString.length;
@@ -133,6 +126,11 @@ const EpubViewer = forwardRef<EpubViewerRef, EpubViewerProps>(({
         }
         
         book = ePub(bytes.buffer);
+        
+        // Carga el index de CFIs desde SQLite de forma instantánea
+        if (cfiIndexRaw && Array.isArray(cfiIndexRaw) && cfiIndexRaw.length > 0) {
+          book.locations.load(cfiIndexRaw);
+        }
         
         book.ready.then(() => {
           const metadata = book.package.metadata;
@@ -162,12 +160,11 @@ const EpubViewer = forwardRef<EpubViewerRef, EpubViewerProps>(({
 
           return book.loaded.navigation;
         }).then((navigation) => {
-          // FUNCIÓN CORREGIDA: Mapea recursivamente las partes y sus subcapítulos
           function mapNavigationTree(items) {
             if (!items) return undefined;
             return items.map(chap => {
               const mapped = {
-                label: chap.label ? chap.label.trim() : 'Capítulo',
+                title: chap.label ? chap.label.trim() : 'Capítulo',
                 href: chap.href
               };
               if (chap.subitems && chap.subitems.length > 0) {
@@ -182,12 +179,6 @@ const EpubViewer = forwardRef<EpubViewerRef, EpubViewerProps>(({
             type: 'navigation',
             toc: mapNavigationTree(chapters)
           }));
-
-          return book.locations.generate(1500);
-        }).then(() => {
-          if (rendition && rendition.currentLocation()) {
-            triggerRelocated(rendition.currentLocation());
-          }
         });
 
         rendition = book.renderTo("viewer", {
@@ -199,29 +190,24 @@ const EpubViewer = forwardRef<EpubViewerRef, EpubViewerProps>(({
         rendition.hooks.content.register((content) => {
           const doc = content.document;
           
-          // 1. Inyectamos los estilos base de fondo y texto[cite: 1]
           const style = doc.createElement("style");
-          const bg = currentTheme === 'dark' ? '#121212' : '#ffffff'; //[cite: 1]
-          const text = currentTheme === 'dark' ? '#B0B0B0' : '#1A1A1A'; //[cite: 1]
-          style.innerHTML = 'html, body { background-color: ' + bg + ' !important; color: ' + text + ' !important; }'; //[cite: 1]
-          doc.head.appendChild(style); //[cite: 1]
+          const bg = currentTheme === 'dark' ? '#121212' : '#ffffff';
+          const text = currentTheme === 'dark' ? '#B0B0B0' : '#1A1A1A';
+          style.innerHTML = 'html, body { background-color: ' + bg + ' !important; color: ' + text + ' !important; }';
+          doc.head.appendChild(style);
 
-          // 2. DETECTOR DE ENLACES REALES:[cite: 1]
-          const links = doc.querySelectorAll('a'); //[cite: 1]
+          const links = doc.querySelectorAll('a');
           links.forEach(link => {
-            const href = link.getAttribute('href'); //[cite: 1]
-            if (href && href !== '#' && href.trim() !== '' && link.textContent.trim().length < 60) { //[cite: 1]
-              link.classList.add('enlace-real'); //[cite: 1]
+            const href = link.getAttribute('href');
+            if (href && href !== '#' && href.trim() !== '' && link.textContent.trim().length < 60) {
+              link.classList.add('enlace-real');
             }
           });
 
-          // 3. NUEVO: DETECTOR DE SELECCIÓN DE PALABRAS
-          // Escuchamos cuando el usuario termina de seleccionar texto en el iframe
           doc.addEventListener('selectionchange', () => {
             const selection = doc.getSelection();
             const textoSeleccionado = selection ? selection.toString().trim() : '';
 
-            // Validamos que sea una palabra o frase corta razonable (evitamos ruidos o párrafos enteros)
             if (textoSeleccionado && textoSeleccionado.length > 0 && textoSeleccionado.length < 50) {
               window.ReactNativeWebView.postMessage(JSON.stringify({
                 type: 'text_selected',
@@ -242,20 +228,9 @@ const EpubViewer = forwardRef<EpubViewerRef, EpubViewerProps>(({
           'p': { 'color': '#B0B0B0 !important' },
           'span': { 'color': '#B0B0B0 !important' },
           'div': { 'color': '#B0B0B0 !important' },
-          'a': { 
-            'color': 'inherit !important', 
-            'text-decoration': 'none !important' 
-          },
-          '.enlace-real': { 
-            'color': '#64B5F6 !important', 
-            'text-decoration': 'underline !important' 
-          },
-          'h1': { 'color': '#FFFFFF !important' },
-          'h2': { 'color': '#FFFFFF !important' },
-          'h3': { 'color': '#FFFFFF !important' },
-          'h4': { 'color': '#FFFFFF !important' },
-          'h5': { 'color': '#FFFFFF !important' },
-          'h6': { 'color': '#FFFFFF !important' }
+          'a': { 'color': 'inherit !important', 'text-decoration': 'none !important' },
+          '.enlace-real': { 'color': '#64B5F6 !important', 'text-decoration': 'underline !important' },
+          'h1': { 'color': '#FFFFFF !important' }, 'h2': { 'color': '#FFFFFF !important' }, 'h3': { 'color': '#FFFFFF !important' }
         });
         
         rendition.themes.register('light', {
@@ -269,17 +244,9 @@ const EpubViewer = forwardRef<EpubViewerRef, EpubViewerProps>(({
           'p': { 'color': '#1A1A1A !important' },
           'span': { 'color': '#1A1A1A !important' },
           'div': { 'color': '#1A1A1A !important' },
-          'a': { 
-              'color': 'inherit !important', 
-              'text-decoration': 'none !important' 
-            },
-            '.enlace-real': { 
-              'color': '#2196F3 !important', 
-              'text-decoration': 'underline !important' 
-            },
-          'h1': { 'color': '#1A1A1A !important' },
-          'h2': { 'color': '#1A1A1A !important' },
-          'h3': { 'color': '#1A1A1A !important' }
+          'a': { 'color': 'inherit !important', 'text-decoration': 'none !important' },
+          '.enlace-real': { 'color': '#2196F3 !important', 'text-decoration': 'underline !important' },
+          'h1': { 'color': '#1A1A1A !important' }, 'h2': { 'color': '#1A1A1A !important' }, 'h3': { 'color': '#1A1A1A !important' }
         });
 
         const displayPromise = initialCfi ? rendition.display(initialCfi) : rendition.display();
@@ -288,6 +255,10 @@ const EpubViewer = forwardRef<EpubViewerRef, EpubViewerProps>(({
           window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'ready' }));
           window.applyFontSize(initialFontSize);
           window.changeTheme(initialTheme);
+          
+          if (rendition.currentLocation()) {
+            triggerRelocated(rendition.currentLocation());
+          }
         });
 
         rendition.on("relocated", (location) => {
@@ -305,6 +276,7 @@ const EpubViewer = forwardRef<EpubViewerRef, EpubViewerProps>(({
           window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'toggle_controls' }));
         });
 
+        // --- GESTOS TOUCH ---
         rendition.on("touchstart", (event) => {
           if (isAnimating) return;
           isDragging = true;
@@ -322,7 +294,6 @@ const EpubViewer = forwardRef<EpubViewerRef, EpubViewerProps>(({
           if (!isDragging || !iframeBody) return;
           const currentX = event.touches[0].clientX;
           const dx = currentX - touchStartStartX;
-          
           iframeBody.style.transform = 'translateX(' + dx + 'px)';
         });
 
@@ -341,26 +312,19 @@ const EpubViewer = forwardRef<EpubViewerRef, EpubViewerProps>(({
             isAnimating = true;
             iframeBody.style.transition = 'transform 0.2s ease-out';
             iframeBody.style.transform = 'translateX(-' + pageWidth + 'px)';
-            
             setTimeout(() => {
               iframeBody.style.transition = 'none';
               iframeBody.style.transform = 'translateX(0)';
-              rendition.next().catch(() => {
-                isAnimating = false;
-              });
+              rendition.next().catch(() => { isAnimating = false; });
             }, 200);
-
           } else if (diffX > threshold || (diffX > 45 && diffTime < 300)) {
             isAnimating = true;
             iframeBody.style.transition = 'transform 0.2s ease-out';
             iframeBody.style.transform = 'translateX(' + pageWidth + 'px)';
-            
             setTimeout(() => {
               iframeBody.style.transition = 'none';
               iframeBody.style.transform = 'translateX(0)';
-              rendition.prev().catch(() => {
-                isAnimating = false;
-              });
+              rendition.prev().catch(() => { isAnimating = false; });
             }, 200);
           } else {
             iframeBody.style.transition = 'transform 0.2s ease-out';
@@ -388,15 +352,23 @@ const EpubViewer = forwardRef<EpubViewerRef, EpubViewerProps>(({
       if (book.locations && book.locations.length() > 0) {
         currentPage = book.locations.locationFromCfi(cfi) || 0;
         totalPages = book.locations.length() || 0;
-        const pct = book.locations.percentageFromCfi(cfi);
-        progress = Math.round(pct * 100);
+        
+        // Cálculo matemático manual estricto basado en flotantes (0 a 1)
+        if (totalPages > 0 && currentPage > 0) {
+          progress = currentPage / totalPages;
+        } else {
+          const pct = book.locations.percentageFromCfi(cfi);
+          progress = pct || 0;
+        }
       } else {
         if (location.start.percentage !== undefined) {
-          progress = Math.round(location.start.percentage * 100);
-        } else if (location.location && location.location.start && location.location.start.percentage !== undefined) {
-          progress = Math.round(location.location.start.percentage * 100);
+          progress = location.start.percentage;
         }
       }
+
+      // Restringir el progreso estrictamente entre 0 y 1
+      if (progress > 1) progress = 1;
+      if (progress < 0) progress = 0;
 
       const section = book.spine.get(cfi);
       if (section) {
@@ -405,23 +377,35 @@ const EpubViewer = forwardRef<EpubViewerRef, EpubViewerProps>(({
           totalPages = book.spine.length;
         }
         const nav = book.navigation.get(section.href);
-        if (nav) {
-          chapterTitle = nav.label ? nav.label.trim() : "Capítulo " + (section.index + 1);
-        } else {
-          chapterTitle = "Capítulo " + (section.index + 1);
-        }
+        chapterTitle = nav && nav.label ? nav.label.trim() : "Capítulo " + (section.index + 1);
       }
 
       window.ReactNativeWebView.postMessage(JSON.stringify({
         type: 'progress',
-        progress: progress,
-        chapter: section ? section.index : 0,
+        progress: progress, // Siempre viaja como un flotante decimal (ej: 0.2926)
+        chapter: chapterTitle,
         cfi: cfi,
         chapterTitle: chapterTitle,
         currentPage: currentPage,
         totalPages: totalPages
       }));
     }
+
+    window.goToPercentage = function(percentage) {
+      if (rendition && book) {
+        // Recibe directamente el flotante 0-1 mapeado desde el Slider de RN
+        const fraction = percentage; 
+        
+        if (book.locations && typeof book.locations.cfiFromPercentage === 'function' && book.locations.length() > 0) {
+          const cfi = book.locations.cfiFromPercentage(fraction);
+          if (cfi) rendition.display(cfi);
+        } else {
+          const spineIndex = Math.floor(fraction * book.spine.length);
+          const section = book.spine.get(spineIndex);
+          if (section) rendition.display(section.href);
+        }
+      }
+    };
 
     window.nextPage = function() {
       if (!rendition || isAnimating) return;
@@ -432,13 +416,10 @@ const EpubViewer = forwardRef<EpubViewerRef, EpubViewerProps>(({
         body.style.transition = 'transform 0.2s ease-out';
         const pageWidth = window.innerWidth;
         body.style.transform = 'translateX(-' + pageWidth + 'px)';
-        
         setTimeout(() => {
           body.style.transition = 'none';
           body.style.transform = 'translateX(0)';
-          rendition.next().catch(() => {
-            isAnimating = false;
-          });
+          rendition.next().catch(() => { isAnimating = false; });
         }, 200);
       } else {
         rendition.next();
@@ -454,13 +435,10 @@ const EpubViewer = forwardRef<EpubViewerRef, EpubViewerProps>(({
         body.style.transition = 'transform 0.2s ease-out';
         const pageWidth = window.innerWidth;
         body.style.transform = 'translateX(' + pageWidth + 'px)';
-        
         setTimeout(() => {
           body.style.transition = 'none';
           body.style.transform = 'translateX(0)';
-          rendition.prev().catch(() => {
-            isAnimating = false;
-          });
+          rendition.prev().catch(() => { isAnimating = false; });
         }, 200);
       } else {
         rendition.prev();
@@ -468,30 +446,18 @@ const EpubViewer = forwardRef<EpubViewerRef, EpubViewerProps>(({
     };
 
     window.goToChapter = function(href) {
-      if (rendition) {
-        rendition.display(href);
-      }
+      if (rendition) rendition.display(href);
     };
 
     window.applyFontSize = function(size) {
-      if (rendition) {
-        rendition.themes.fontSize(size + 'px');
-      }
+      if (rendition) rendition.themes.fontSize(size + 'px');
     };
 
     window.changeTheme = function(themeName) {
       currentTheme = themeName;
-      if (themeName === 'dark') {
-        document.body.style.backgroundColor = '#121212';
-        document.body.style.color = '#ffffff';
-      } else {
-        document.body.style.backgroundColor = '#ffffff';
-        document.body.style.color = '#1A1A1A';
-      }
-      
-      if (rendition) {
-        rendition.themes.select(themeName);
-      }
+      document.body.style.backgroundColor = themeName === 'dark' ? '#121212' : '#ffffff';
+      document.body.style.color = themeName === 'dark' ? '#ffffff' : '#1A1A1A';
+      if (rendition) rendition.themes.select(themeName);
     };
   </script>
 </body>
@@ -501,25 +467,22 @@ const EpubViewer = forwardRef<EpubViewerRef, EpubViewerProps>(({
   const handleMessage = async (event: any) => {
     try {
       const data = JSON.parse(event.nativeEvent.data);
-
       switch (data.type) {
         case 'ready_to_receive':
           try {
-            // Usamos la función importada desde /legacy que sí soporta 'base64' sin dar errores
             const base64Data = await readAsStringAsync(book.filePath, {
               encoding: 'base64',
             });
 
-            const cfiParam = book.currentCfi ? `"${book.currentCfi}"` : 'null';
-            const js = `window.initBook("${base64Data}", ${fontSize}, "${theme}", ${cfiParam}); true;`;
+            const cfiParam = book.lastCfi ? `"${book.lastCfi}"` : 'null';
+            const cfiIndexParam = cfiIndex ? JSON.stringify(cfiIndex) : 'null';
+            
+            const js = `window.initBook("${base64Data}", ${fontSize}, "${theme}", ${cfiParam}, ${cfiIndexParam}); true;`;
             webViewRef.current?.injectJavaScript(js);
           } catch (err: any) {
             console.error('Error reading book file:', err);
             setLoading(false);
-            Alert.alert(
-              'Error',
-              'No se pudo leer el archivo del libro. Es posible que el archivo esté corrupto o no se encuentre.'
-            );
+            Alert.alert('Error', 'No se pudo abrir el archivo físico del libro.');
           }
           break;
         case 'navigation':
@@ -538,7 +501,7 @@ const EpubViewer = forwardRef<EpubViewerRef, EpubViewerProps>(({
         case 'cover':
           onCoverExtracted?.(data.cover);
           break;
-        case 'text_selected': // 👈 AGREGA ESTE CASO
+        case 'text_selected': 
           onTextSelected?.(data.text);
           break;
         case 'ready':
@@ -547,7 +510,6 @@ const EpubViewer = forwardRef<EpubViewerRef, EpubViewerProps>(({
         case 'error':
           console.error('EPUB Error inside WebView:', data.message);
           setLoading(false);
-          Alert.alert('Error al renderizar', 'El lector no pudo interpretar el formato del libro.');
           break;
       }
     } catch (error) {

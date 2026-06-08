@@ -77,3 +77,63 @@ npm start
 ## Licencia
 
 MIT
+
+```
+Biblioo
+├─ .expo
+│  ├─ devices.json
+│  ├─ README.md
+│  ├─ types
+│  │  └─ router.d.ts
+│  └─ web
+│     └─ cache
+│        └─ production
+│           └─ images
+│              └─ favicon
+│                 └─ favicon-a4e030697a7571b3e95d31860e4da55d2f98e5e861e2b55e414f45a8556828ba-contain-transparent
+│                    └─ favicon-48.png
+├─ AGENTS.md
+├─ app
+│  ├─ details
+│  │  └─ index.tsx
+│  ├─ home
+│  │  └─ index.tsx
+│  ├─ reader
+│  │  └─ index.tsx
+│  └─ _layout.tsx
+├─ app.json
+├─ assets
+│  ├─ diccionario_produccion.json
+│  ├─ images
+│  │  ├─ android-icon-background.png
+│  │  ├─ android-icon-foreground.png
+│  │  ├─ android-icon-monochrome.png
+│  │  ├─ favicon.png
+│  │  ├─ icon.png
+│  │  └─ splash-icon.png
+│  └─ lemas_en.json
+├─ CLAUDE.md
+├─ components
+│  ├─ home
+│  │  ├─ BookCard.tsx
+│  │  └─ ContinueReadingCard.tsx
+│  └─ reader
+│     └─ EpubViewer.tsx
+├─ context
+│  ├─ LibraryContext.tsx
+│  └─ ThemeContext.tsx
+├─ eas.json
+├─ eslint.config.js
+├─ hooks
+│  ├─ use-color-scheme.ts
+│  ├─ use-color-scheme.web.ts
+│  └─ use-theme-color.ts
+├─ package-lock.json
+├─ package.json
+├─ README.md
+├─ TODO.md
+├─ tsconfig.json
+└─ utils
+   └─ storage.ts
+
+```

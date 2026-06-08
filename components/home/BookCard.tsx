@@ -1,7 +1,7 @@
 import React from 'react';
 import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useTheme } from '../../context/ThemeContext';
-import { Book } from '../../utils/storage';
+import { Book } from '../../utils/storage/types';
 
 interface BookCardProps {
   book: Book;
@@ -28,8 +28,8 @@ export default function BookCard({ book, onPress, onFavoritePress, width }: Book
       onPress={onPress}
       activeOpacity={0.8}
     >
-      {book.cover ? (
-        <Image source={{ uri: book.cover }} style={styles.cover} />
+      {book.coverUrl ? (
+        <Image source={{ uri: book.coverUrl }} style={styles.cover} />
       ) : (
         <View style={[styles.placeholderCover, { backgroundColor: colors.primary }]}>
           <Text style={styles.placeholderText}>
