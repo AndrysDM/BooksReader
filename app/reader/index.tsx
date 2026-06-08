@@ -14,6 +14,7 @@ import { getBookCache } from '@/utils/storage/queries/locations';
 import { BookCache } from '../../utils/storage/types';
 
 
+import BookmarksModal from '@/components/reader/BookmarksModal';
 import ChaptersModal from '@/components/reader/ChaptersModal';
 import DictionaryModal from '@/components/reader/DictionaryModal';
 import styles from '@/components/reader/reader.styles';
@@ -29,8 +30,8 @@ export default function ReaderScreen() {
   const router = useRouter();
 
   // 1. Extraemos solo lo que existe en tu interfaz tipada de LibraryContext
-  const { books, updateProgress, deleteBook } = useLibrary();
-  const { colors, theme, fontSize,  } = useTheme();
+  const { books, updateProgress, deleteBook, currentAnnotations, addAnnotation, removeBookmark, loadAnnotations } = useLibrary();
+  const { colors, theme, fontSize, } = useTheme();
 
   const [showSettings, setShowSettings] = useState(false);
   const [showChapters, setShowChapters] = useState(false);
@@ -61,6 +62,24 @@ export default function ReaderScreen() {
   const [selectedText, setSelectedText] = useState<string>('');
   const [translation, setTranslation] = useState<string>('');
   const [showDictionaryModal, setShowDictionaryModal] = useState<boolean>(false);
+
+  // Añadido: Estados para controlar la info exacta de la página actual para el marcador
+  const [currentCfi, setCurrentCfi] = useState<string>('');
+  const [currentPageLabel, setCurrentPageLabel] = useState<string>('Página 1');
+  const [currentChapterText, setCurrentChapterText] = useState<string>('');
+
+  useEffect(() => {
+    if (book?.id) {
+      loadAnnotations(book.id);
+    }
+  }, [book?.id]);
+
+  const [showBookmarks, setShowBookmarks] = useState(false);
+
+  const handleSelectBookmark = (cfi: string) => {
+    epubViewerRef.current?.goToChapter(cfi);
+    setShowBookmarks(false); // Cierra el modal tras viajar
+  };
 
   const [cfiCache, setCfiCache] = useState<string[] | null>(null);
   const flattenChapters = useCallback((navItems: any[], level = 0): any[] => {
@@ -135,12 +154,22 @@ export default function ReaderScreen() {
   // 2. CORREGIDO: Orden de parámetros ajustado a la firma de tu base de datos SQLite
   const handleProgressChange = async (progress: number, chapter: string, cfi: string, details?: any) => {
     setCurrentProgress(progress);
+
+    // Guardamos el CFI actual de la pantalla para saber si está marcado o no
+    setCurrentCfi(cfi);
+
     if (details) {
-      if (details.currentPage) setCurrentPage(details.currentPage);
+      if (details.currentPage) {
+        setCurrentPage(details.currentPage);
+        setCurrentPageLabel(`Página ${details.currentPage}`); // 👈 Guardamos el label limpio
+      }
       if (details.totalPages) setTotalPages(details.totalPages);
       if (details.chapterTitle) setChapterTitle(details.chapterTitle);
+
+      // 👈 Capturamos el texto limpio enviado desde el querySelector del WebView
+      setCurrentChapterText(details.pageTextPreview || details.chapterTitle || 'Inicio de sección');
     }
-    // updateProgress espera: (id, progress, lastCfi, lastChapterTitle)
+
     await updateProgress(book.id, progress, cfi, chapter);
   };
 
@@ -173,6 +202,28 @@ export default function ReaderScreen() {
   const handleGoToChapter = (href: string) => {
     epubViewerRef.current?.goToChapter(href);
     setShowChapters(false);
+  };
+
+  const isBookmarked = currentAnnotations.some(
+    a => a.cfi === currentCfi && a.type === 'bookmark'
+  );
+
+  const handleToggleBookmark = async () => {
+    if (isBookmarked) {
+      // Si ya está marcado, lo borramos de SQLite y del estado global
+      await removeBookmark(book.id, currentCfi);
+    } else {
+      // Si no, construimos tu formato exacto: "Página 234: El gato volador."
+      const formattedText = `${currentPageLabel}: ${currentChapterText}`;
+
+      await addAnnotation({
+        bookId: book.id,
+        type: 'bookmark',
+        cfi: currentCfi,
+        textContent: formattedText, // Lo guardamos limpio como texto plano
+        color: null,                 // Los marcadores no llevan color de fondo
+      });
+    }
   };
 
   // ACCIÓN DISPARADORA DE BÚSQUEDA DESDE RN
@@ -246,6 +297,8 @@ export default function ReaderScreen() {
           handleSearchText={handleSearchText}
           onBack={() => router.back()}
           onShowSettings={() => setShowSettings(true)}
+          isBookmarked={isBookmarked}
+          onToggleBookmark={handleToggleBookmark}
         />
       )}
 
@@ -290,10 +343,18 @@ export default function ReaderScreen() {
             />
           </View>
 
-          {/* Fila Inferior: Solo el botón de Capítulos centrado */}
-          <View style={styles.bottomBarButtonsRow}>
+          {/* =======================================================
+              Fila Inferior: Botones de Capítulos y Marcadores distribuidos
+              ======================================================= */}
+          <View style={[styles.bottomBarButtonsRow, { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center' }]}>
+            {/* Botón de Capítulos */}
             <TouchableOpacity onPress={() => setShowChapters(true)} style={styles.centerChaptersButton}>
               <Ionicons name="list" size={30} color={colors.text} />
+            </TouchableOpacity>
+
+            {/* Nuevo Botón de Marcadores Guardados */}
+            <TouchableOpacity onPress={() => setShowBookmarks(true)} style={styles.centerChaptersButton}>
+              <Ionicons name="bookmarks" size={26} color={colors.text} />
             </TouchableOpacity>
           </View>
 
@@ -331,6 +392,12 @@ export default function ReaderScreen() {
         isSearching={isSearching}
         searchResults={searchResults}
         onSelectResult={handleSelectSearchResult}
+      />
+      <BookmarksModal
+        isVisible={showBookmarks}
+        onClose={() => setShowBookmarks(false)}
+        bookId={book.id}
+        onSelectBookmark={handleSelectBookmark}
       />
     </View>
   );

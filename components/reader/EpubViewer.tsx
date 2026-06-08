@@ -77,6 +77,7 @@ const EpubViewer = forwardRef<EpubViewerRef, EpubViewerProps>(({
     }
   }, [theme, loading]);
 
+  /*html*/
   const htmlContent = `
 <!DOCTYPE html>
 <html>
@@ -122,6 +123,8 @@ const EpubViewer = forwardRef<EpubViewerRef, EpubViewerProps>(({
     let isDragging = false;
     let isAnimating = false;
     let iframeBody = null;
+
+    let currentDoc = null;
 
     window.onload = function() {
       window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'ready_to_receive' }));
@@ -200,7 +203,8 @@ const EpubViewer = forwardRef<EpubViewerRef, EpubViewerProps>(({
 
         rendition.hooks.content.register((content) => {
           const doc = content.document;
-          
+          currentDoc = doc;
+
           const style = doc.createElement("style");
           const bg = currentTheme === 'dark' ? '#121212' : '#ffffff';
           const text = currentTheme === 'dark' ? '#B0B0B0' : '#1A1A1A';
@@ -398,7 +402,7 @@ const EpubViewer = forwardRef<EpubViewerRef, EpubViewerProps>(({
       });
     };
 
-    function triggerRelocated(location) {
+   function triggerRelocated(location) {
       if (!location || !location.start) return;
       
       const cfi = location.start.cfi;
@@ -406,12 +410,66 @@ const EpubViewer = forwardRef<EpubViewerRef, EpubViewerProps>(({
       let currentPage = 0;
       let totalPages = 0;
       let chapterTitle = "Capítulo";
+      let firstTextPreview = "";
 
+      // ========================================================
+      // EXTRACTOR DE TEXTO REAL (REPARADO Y LIGERO)
+      // ========================================================
+      try {
+        if (rendition && typeof rendition.getRange === 'function') {
+          const exactRange = rendition.getRange(cfi);
+          
+          if (exactRange) {
+            let foundText = "";
+
+            // CASO 1: El CFI apunta directo a un nodo de texto plano
+            if (exactRange.startContainer && exactRange.startContainer.nodeType === 3) {
+              const fullTxt = exactRange.startContainer.textContent || "";
+              const offset = exactRange.startOffset || 0;
+              foundText = fullTxt.substring(offset).trim();
+            }
+
+            // CASO 2: Si viene vacío o apuntó a una etiqueta estructural superior
+            if (!foundText || foundText.length < 4) {
+              const fragment = exactRange.cloneContents();
+              if (fragment) {
+                const element = fragment.querySelector('h1, h2, h3, h4, h5, h6, p, li, span, a');
+                foundText = element ? element.textContent : fragment.textContent;
+              }
+            }
+
+            // SALVAGUARDA: Si el nodo sigue rebelde, miramos a su hermano inmediato
+            if (!foundText || foundText.trim().length < 5) {
+              if (exactRange.startContainer) {
+                let containerNode = exactRange.startContainer;
+                if (containerNode.nodeType === 3) containerNode = containerNode.parentElement;
+                if (containerNode) {
+                  foundText = containerNode.textContent || 
+                              (containerNode.nextElementSibling ? containerNode.nextElementSibling.textContent : "");
+                }
+              }
+            }
+
+            // LIMPIEZA ADAPTATIVA DEL TEXTO CRUDO
+            if (foundText) {
+              foundText = foundText.normalize("NFC");
+              if (foundText.length > 60) {
+                foundText = foundText.substring(0, 57) + "...";
+              }
+              firstTextPreview = foundText;
+            }
+          }
+        }
+      } catch (cfiExtractionError) {
+        console.error("Error en extractor por rango:", cfiExtractionError);
+      }
+      // ========================================================
+
+      // --- Lógica de progreso e historial (Intacta) ---
       if (book.locations && book.locations.length() > 0) {
         currentPage = book.locations.locationFromCfi(cfi) || 0;
         totalPages = book.locations.length() || 0;
         
-        // Cálculo matemático manual estricto basado en flotantes (0 a 1)
         if (totalPages > 0 && currentPage > 0) {
           progress = currentPage / totalPages;
         } else {
@@ -424,7 +482,6 @@ const EpubViewer = forwardRef<EpubViewerRef, EpubViewerProps>(({
         }
       }
 
-      // Restringir el progreso estrictamente entre 0 y 1
       if (progress > 1) progress = 1;
       if (progress < 0) progress = 0;
 
@@ -438,14 +495,19 @@ const EpubViewer = forwardRef<EpubViewerRef, EpubViewerProps>(({
         chapterTitle = nav && nav.label ? nav.label.trim() : "Capítulo " + (section.index + 1);
       }
 
+      if (!firstTextPreview) {
+        firstTextPreview = chapterTitle;
+      }
+
       window.ReactNativeWebView.postMessage(JSON.stringify({
         type: 'progress',
-        progress: progress, // Siempre viaja como un flotante decimal (ej: 0.2926)
+        progress: progress,
         chapter: chapterTitle,
         cfi: cfi,
         chapterTitle: chapterTitle,
         currentPage: currentPage,
-        totalPages: totalPages
+        totalPages: totalPages,
+        pageTextPreview: firstTextPreview 
       }));
     }
 
@@ -550,7 +612,8 @@ const EpubViewer = forwardRef<EpubViewerRef, EpubViewerProps>(({
           onProgressChange?.(data.progress, data.chapter, data.cfi, {
             chapterTitle: data.chapterTitle,
             currentPage: data.currentPage,
-            totalPages: data.totalPages
+            totalPages: data.totalPages,
+            pageTextPreview: data.pageTextPreview || data.chapterTitle || 'Inicio de sección'
           });
           break;
         case 'toggle_controls':

@@ -4,7 +4,6 @@ import { Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useTheme } from '../../context/ThemeContext';
 import styles from './reader.styles';
 
-
 interface ReaderHeaderProps {
   bookTitle: string;
   bookAuthor: string;
@@ -16,6 +15,12 @@ interface ReaderHeaderProps {
   handleSearchText: () => void;
   onBack: () => void;
   onShowSettings: () => void;
+  
+  // ==========================================
+  // NUEVAS PROPS PARA EL MARCADOR
+  // ==========================================
+  isBookmarked: boolean;         // Controla si el icono se pinta relleno o vacío
+  onToggleBookmark: () => void;  // Acción para guardar o borrar en SQLite
 }
 
 export default function ReaderHeader({
@@ -29,6 +34,8 @@ export default function ReaderHeader({
   handleSearchText,
   onBack,
   onShowSettings,
+  isBookmarked,       
+  onToggleBookmark,   
 }: ReaderHeaderProps) {
   const { colors } = useTheme();
 
@@ -98,9 +105,18 @@ export default function ReaderHeader({
             <TouchableOpacity onPress={() => setIsSearchingText(true)} style={styles.headerButton}>
               <Ionicons name="search" size={24} color={colors.text} />
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => { }} style={styles.headerButton}>
-              <Ionicons name="bookmark-outline" size={24} color={colors.text} />
+            
+            {/* ==========================================
+                BOTÓN INTERACTIVO DEL MARCADOR (MODIFICADO)
+                ========================================== */}
+            <TouchableOpacity onPress={onToggleBookmark} style={styles.headerButton}>
+              <Ionicons 
+                name={isBookmarked ? "bookmark" : "bookmark-outline"} 
+                size={24} 
+                color={isBookmarked ? (colors.primary || '#2196F3') : colors.text} 
+              />
             </TouchableOpacity>
+            
             <TouchableOpacity onPress={onShowSettings} style={styles.headerButton}>
               <Ionicons name="ellipsis-vertical-sharp" size={24} color={colors.text} />
             </TouchableOpacity>
