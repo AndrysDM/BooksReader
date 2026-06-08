@@ -7,28 +7,28 @@ Este documento contiene la hoja de ruta detallada para migrar la persistencia de
 ## 💾 1. Migración del Almacenamiento a SQLite
 *Migrar el sistema de persistencia y definir el nuevo modelo de datos relacional para el ecosistema de la biblioteca.*
 
-- [ ] **Configurar la inicialización de la Base de Datos (`storage.ts`)**
-  - [ ] Implementar la apertura asíncrona de `library.db` usando `expo-sqlite`.
-  - [ ] Asegurar la ejecución de `PRAGMA foreign_keys = ON;` al levantar la conexión.
-- [ ] **Definir el Esquema de Tablas e Índices**
-  - [ ] Crear tabla `books` con restricción `UNIQUE` en la ruta del archivo (`file_path`).
-  - [ ] Crear tabla `annotations` unificada para notas, marcadores y subrayados con borrado en cascada (`ON DELETE CASCADE`).
-  - [ ] Crear tabla `book_locations` para almacenar la caché de índices CFI.
-  - [ ] Crear índices de optimización: `idx_annotations_book_id` y `idx_locations_book_id`.
-- [ ] **Mapeo de Tipos y Métodos de Reemplazo**
-  - [ ] Adaptar las consultas de lectura para convertir enteros (`0`/`1`) en booleanos de TypeScript (`isFavorite`).
-  - [ ] Crear funciones CRUD esenciales para la vista principal (`getBooks`, `toggleFavorite`, `deleteBook`).
+- [x] **Configurar la inicialización de la Base de Datos (`storage.ts`)**
+  - [x] Implementar la apertura asíncrona de `library.db` usando `expo-sqlite`.
+  - [x] Asegurar la ejecución de `PRAGMA foreign_keys = ON;` al levantar la conexión.
+- [x] **Definir el Esquema de Tablas e Índices**
+  - [x] Crear tabla `books` con restricción `UNIQUE` en la ruta del archivo (`file_path`).
+  - [x] Crear tabla `annotations` unificada para notas, marcadores y subrayados con borrado en cascada (`ON DELETE CASCADE`).
+  - [x] Crear tabla `book_locations` para almacenar la caché de índices CFI.
+  - [x] Crear índices de optimización: `idx_annotations_book_id` y `idx_locations_book_id`.
+- [x] **Mapeo de Tipos y Métodos de Reemplazo**
+  - [x] Adaptar las consultas de lectura para convertir enteros (`0`/`1`) en booleanos de TypeScript (`isFavorite`).
+  - [x] Crear funciones CRUD esenciales para la vista principal (`getBooks`, `toggleFavorite`, `deleteBook`).
 
 ---
 
 ## 📥 2. Extractor de Archivos y Generación Externa de Locations
 *Modificar el ciclo de vida de importación/apertura para procesar la estructura interna del ePub una sola vez.*
 
-- [ ] **Intercepción en la Apertura del Libro**
-  - [ ] Verificar en la base de datos si el libro abierto ya cuenta con localizaciones cacheadas.
-  - [ ] Disparar el proceso de extracción masiva únicamente si el conteo de registros en `book_locations` para ese `book_id` es igual a cero.
-- [ ] **Estrategia de Guardado Masivo de Alto Rendimiento**
-  - [ ] Capturar el array resultante de las ~1500 localizaciones fijas generadas por el motor.
+- [x] **Intercepción en la Apertura del Libro**
+  - [x] Verificar en la base de datos si el libro abierto ya cuenta con localizaciones cacheadas.
+  - [x] Disparar el proceso de extracción masiva únicamente si el conteo de registros en `book_locations` para ese `book_id` es igual a cero.
+- [x] **Estrategia de Guardado Masivo de Alto Rendimiento**
+  - [x] Capturar el array resultante de las ~1500 localizaciones fijas generadas por el motor.
   - [ ] Implementar una transacción manual en SQLite (`BEGIN TRANSACTION` / `COMMIT`) para escribir los miles de CFIs en disco en milisegundos.
   - [ ] Asegurar el cierre y liberación del cursor mediante `.finalizeAsync()`.
 
@@ -37,12 +37,12 @@ Este documento contiene la hoja de ruta detallada para migrar la persistencia de
 ## 📖 3. Optimización del Visor (`EpubViewer`)
 *Modificar el puente de comunicación entre el ecosistema nativo y el WebView para conseguir una carga instantánea.*
 
-- [ ] **Carga de Caché desde SQLite**
-  - [ ] Consultar de manera asíncrona las localizaciones del libro activo ordenadas estrictamente por su índice (`ORDER BY cfi_index ASC`).
-  - [ ] Guardar el set de CFIs en un estado de React Native como un array plano de strings (`string[]`).
-- [ ] **Inyección de Datos al Motor del Lector**
-  - [ ] Pasar el array de localizaciones serializado en JSON al WebView mediante la propiedad `injectedJavaScript`.
-  - [ ] Modificar el JS del visor para saltarse el proceso de paginación e invocar directamente el método de carga instantánea (`book.locations.load()`).
+- [x] **Carga de Caché desde SQLite**
+  - [x] Consultar de manera asíncrona las localizaciones del libro activo ordenadas estrictamente por su índice (`ORDER BY cfi_index ASC`).
+  - [x] Guardar el set de CFIs en un estado de React Native como un array plano de strings (`string[]`).
+- [x] **Inyección de Datos al Motor del Lector**
+  - [x] Pasar el array de localizaciones serializado en JSON al WebView mediante la propiedad `injectedJavaScript`.
+  - [x] Modificar el JS del visor para saltarse el proceso de paginación e invocar directamente el método de carga instantánea (`book.locations.load()`).
 
 ---
 

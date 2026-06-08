@@ -10,7 +10,6 @@ export default function RootLayout() {
         <Stack screenOptions={{ headerShown: false }}>
           <Stack.Screen name="home/index"  options={{ presentation: 'fullScreenModal' }} />
           <Stack.Screen name="reader/index" options={{ presentation: 'fullScreenModal' }} />
-          <Stack.Screen name="details/index" options={{ presentation: 'card' }} />
         </Stack>
       </LibraryProvider>
     </ThemeProvider>

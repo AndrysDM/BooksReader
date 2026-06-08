@@ -94,8 +94,6 @@ Biblioo
 │                    └─ favicon-48.png
 ├─ AGENTS.md
 ├─ app
-│  ├─ details
-│  │  └─ index.tsx
 │  ├─ home
 │  │  └─ index.tsx
 │  ├─ reader
@@ -134,6 +132,14 @@ Biblioo
 ├─ TODO.md
 ├─ tsconfig.json
 └─ utils
+   ├─ storage
+   │  ├─ db.ts
+   │  ├─ queries
+   │  │  ├─ annotations.ts
+   │  │  ├─ books.ts
+   │  │  └─ locations.ts
+   │  ├─ schema.ts
+   │  └─ types.ts
    └─ storage.ts
 
 ```
