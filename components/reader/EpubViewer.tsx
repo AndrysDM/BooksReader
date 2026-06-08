@@ -265,7 +265,10 @@ const EpubViewer = forwardRef<EpubViewerRef, EpubViewerProps>(({
         });
 
         const displayPromise = initialCfi ? rendition.display(initialCfi) : rendition.display();
-
+        if (initialCfi) {
+          rendition.display(initialCfi);
+        }
+        
         displayPromise.then(() => {
           window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'ready' }));
           window.applyFontSize(initialFontSize);

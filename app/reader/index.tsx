@@ -55,10 +55,9 @@ export default function ReaderScreen() {
   const [isSearchingText, setIsSearchingText] = useState<boolean>(false);
 
   const epubViewerRef = useRef<EpubViewerRef>(null);
-
+  
   // Convertimos de forma segura el ID string de la URL a número para SQLite
   const book = books.find(b => b.id === Number(params.id));
-
   const [selectedText, setSelectedText] = useState<string>('');
   const [translation, setTranslation] = useState<string>('');
   const [showDictionaryModal, setShowDictionaryModal] = useState<boolean>(false);
@@ -154,7 +153,6 @@ export default function ReaderScreen() {
   // 2. CORREGIDO: Orden de parámetros ajustado a la firma de tu base de datos SQLite
   const handleProgressChange = async (progress: number, chapter: string, cfi: string, details?: any) => {
     setCurrentProgress(progress);
-
     // Guardamos el CFI actual de la pantalla para saber si está marcado o no
     setCurrentCfi(cfi);
 
@@ -186,7 +184,6 @@ export default function ReaderScreen() {
       const formaBase = lemas[palabraLimpia];
       if (formaBase && diccionario[formaBase]) {
         resultado = diccionario[formaBase];
-        console.log(`Lema encontrado: ${palabraLimpia} -> ${formaBase}`);
       }
     }
 
