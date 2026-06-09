@@ -85,7 +85,7 @@ export default function SettingsModal({
           }}>
             <View style={styles.progressInfo}>
               <Text style={[styles.progressLabel, { color: colors.secondaryText }]}>Progreso actual</Text>
-              <Text style={[styles.progressValue, { color: colors.text }]}>{currentProgress}% completado</Text>
+              <Text style={[styles.progressValue, { color: colors.text }]}>{Math.round(currentProgress*100)}% completado</Text>
             </View>
             
             <TouchableOpacity

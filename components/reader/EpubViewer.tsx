@@ -569,7 +569,7 @@ const EpubViewer = forwardRef<EpubViewerRef, EpubViewerProps>(({
     };
 
     window.goToChapter = function(href) {
-      if (rendition) rendition.display(href);
+      if (rendition) {rendition.display(href);}
     };
 
     window.applyFontSize = function(size) {

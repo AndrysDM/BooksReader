@@ -71,7 +71,7 @@ export default function ReaderScreen() {
     if (book?.id) {
       loadAnnotations(book.id);
     }
-  }, [book?.id]);
+  }, [book?.id, loadAnnotations]);
 
   const [showBookmarks, setShowBookmarks] = useState(false);
 
