@@ -79,10 +79,15 @@ npm start
 MIT
 
 ```
-Biblioo
+BooksReader
 ├─ .expo
+│  ├─ cache
+│  │  └─ eslint
+│  │     └─ .cache_1ocvf77
 │  ├─ devices.json
 │  ├─ README.md
+│  ├─ static-tmp
+│  │  └─ _error.js
 │  ├─ types
 │  │  └─ router.d.ts
 │  └─ web
@@ -95,7 +100,8 @@ Biblioo
 ├─ AGENTS.md
 ├─ app
 │  ├─ home
-│  │  └─ index.tsx
+│  │  ├─ index.tsx
+│  │  └─ theme.tsx
 │  ├─ reader
 │  │  └─ index.tsx
 │  └─ _layout.tsx
@@ -114,18 +120,22 @@ Biblioo
 ├─ components
 │  ├─ home
 │  │  ├─ BookCard.tsx
-│  │  └─ ContinueReadingCard.tsx
+│  │  ├─ ContinueReadingCard.tsx
+│  │  └─ home.styles.ts
 │  └─ reader
-│     └─ EpubViewer.tsx
+│     ├─ BookmarksModal.tsx
+│     ├─ ChaptersModal.tsx
+│     ├─ DictionaryModal.tsx
+│     ├─ EpubViewer.tsx
+│     ├─ reader.styles.ts
+│     ├─ ReaderHeader.tsx
+│     ├─ SearchResultsModal.tsx
+│     └─ SettingsModal.tsx
 ├─ context
 │  ├─ LibraryContext.tsx
 │  └─ ThemeContext.tsx
 ├─ eas.json
 ├─ eslint.config.js
-├─ hooks
-│  ├─ use-color-scheme.ts
-│  ├─ use-color-scheme.web.ts
-│  └─ use-theme-color.ts
 ├─ package-lock.json
 ├─ package.json
 ├─ README.md

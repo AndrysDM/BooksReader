@@ -21,6 +21,7 @@ import styles from '@/components/reader/reader.styles';
 import ReaderHeader from '@/components/reader/ReaderHeader';
 import SearchResultsModal from '@/components/reader/SearchResultsModal';
 import SettingsModal from '@/components/reader/SettingsModal';
+import { obtenerTraduccion } from '@/utils/wordProcessor';
 // Tipamos el JSON para evitar quejas de TypeScript
 const diccionario: Record<string, string> = diccionarioData;
 const lemas: Record<string, string> = lemasData;
@@ -31,7 +32,7 @@ export default function ReaderScreen() {
 
   // 1. Extraemos solo lo que existe en tu interfaz tipada de LibraryContext
   const { books, updateProgress, deleteBook, currentAnnotations, addAnnotation, removeBookmark, loadAnnotations } = useLibrary();
-  const { colors, theme, fontSize, } = useTheme();
+  const { colors, fontSize, readerMode } = useTheme();
 
   const [showSettings, setShowSettings] = useState(false);
   const [showChapters, setShowChapters] = useState(false);
@@ -55,7 +56,7 @@ export default function ReaderScreen() {
   const [isSearchingText, setIsSearchingText] = useState<boolean>(false);
 
   const epubViewerRef = useRef<EpubViewerRef>(null);
-  
+
   // Convertimos de forma segura el ID string de la URL a número para SQLite
   const book = books.find(b => b.id === Number(params.id));
   const [selectedText, setSelectedText] = useState<string>('');
@@ -172,24 +173,8 @@ export default function ReaderScreen() {
   };
 
   const handleTextSelected = (text: string) => {
-    const palabraLimpia = text.toLowerCase().replace(/^[.,\/#!$%\^&\*;:{}=\-_`~()¿?¡!«»"']+|[.,\/#!$%\^&\*;:{}=\-_`~()¿?¡!«»"']+/g, "").trim();
-
-    if (!palabraLimpia) return;
-
-    let resultado = null;
-
-    if (diccionario[palabraLimpia]) {
-      resultado = diccionario[palabraLimpia];
-    } else {
-      const formaBase = lemas[palabraLimpia];
-      if (formaBase && diccionario[formaBase]) {
-        resultado = diccionario[formaBase];
-      }
-    }
-
-    if (!resultado) {
-      resultado = "No se encontró una traducción exacta para esta palabra.";
-    }
+    const traduccion = obtenerTraduccion(text, diccionario, lemas);
+    const resultado = traduccion || "No se encontró una traducción exacta para esta palabra.";
 
     setSelectedText(text);
     setTranslation(resultado);
@@ -270,7 +255,7 @@ export default function ReaderScreen() {
         ref={epubViewerRef}
         book={book}
         fontSize={fontSize}
-        theme={theme}
+        theme={readerMode}
         cfiIndex={cfiCache}
         onProgressChange={handleProgressChange}
         onToggleControls={handleToggleControls}

@@ -18,7 +18,7 @@ export default function SettingsModal({
   onDeleteBook,
 }: SettingsModalProps) {
   // Consumimos el contexto del tema directamente desde aquí para ahorrar código en el padre
-  const { colors, theme, toggleTheme, fontSize, setFontSize } = useTheme();
+  const { colors, theme, toggleTheme, fontSize, setFontSize, readerMode, setReaderMode } = useTheme();
 
   return (
     <Modal
@@ -29,7 +29,7 @@ export default function SettingsModal({
     >
       <View style={styles.modalOverlay}>
         <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
-          
+
           {/* Header del Modal */}
           <View style={styles.modalHeader}>
             <Text style={[styles.modalTitle, { color: colors.text }]}>Configuración</Text>
@@ -51,6 +51,51 @@ export default function SettingsModal({
             </TouchableOpacity>
           </View>
 
+          {/* Selector de Modo de Lector (solo páginas) */}
+          <View style={styles.settingRow}>
+            <Text style={[styles.settingLabel, { color: colors.text }]}>Modo lector</Text>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <TouchableOpacity
+                onPress={() => setReaderMode('light')}
+                style={[
+                  styles.themeToggle,
+                  styles.circle,
+                  {
+                    backgroundColor: readerMode === 'light' ? '#F5F5DC' : '#F5F5DC',
+                    borderWidth: readerMode === 'light' ? 2 : 0,
+                    borderColor: colors.primary
+                  }
+                ]}
+              />
+
+              <TouchableOpacity
+                onPress={() => setReaderMode('dark')}
+                style={[
+                  styles.themeToggle,
+                  styles.circle,
+                  {
+                    backgroundColor: readerMode === 'dark' ? '#000000' : '#333333',
+                    borderWidth: readerMode === 'dark' ? 2 : 0,
+                    borderColor: colors.primary
+                  }
+                ]}
+              />
+
+              <TouchableOpacity
+                onPress={() => setReaderMode('sepia')}
+                style={[
+                  styles.themeToggle,
+                  styles.circle,
+                  {
+                    backgroundColor: readerMode === 'sepia' ? '#CDB38C' : '#CDB38C',
+                    borderWidth: readerMode === 'sepia' ? 2 : 0,
+                    borderColor: colors.primary
+                  }
+                ]}
+              />
+            </View>
+          </View>
+
           {/* Tamaño de Fuente */}
           <View style={styles.settingRow}>
             <Text style={[styles.settingLabel, { color: colors.text }]}>Tamaño de fuente</Text>
@@ -61,9 +106,9 @@ export default function SettingsModal({
               >
                 <Text style={{ fontSize: 18, color: colors.text }}>A-</Text>
               </TouchableOpacity>
-              
+
               <Text style={[styles.fontSizeValue, { color: colors.text }]}>{fontSize}px</Text>
-              
+
               <TouchableOpacity
                 onPress={() => setFontSize(Math.min(32, fontSize + 2))}
                 style={[styles.fontButton, { backgroundColor: colors.border }]}
@@ -74,20 +119,20 @@ export default function SettingsModal({
           </View>
 
           {/* Info de Progreso y Borrado */}
-          <View style={{ 
-            flexDirection: 'row', 
-            width: '100%', 
-            justifyContent: 'space-between', 
-            alignItems: 'center', 
+          <View style={{
+            flexDirection: 'row',
+            width: '100%',
+            justifyContent: 'space-between',
+            alignItems: 'center',
             borderTopWidth: 1,
             borderTopColor: colors.border,
             paddingTop: 12
           }}>
             <View style={styles.progressInfo}>
               <Text style={[styles.progressLabel, { color: colors.secondaryText }]}>Progreso actual</Text>
-              <Text style={[styles.progressValue, { color: colors.text }]}>{Math.round(currentProgress*100)}% completado</Text>
+              <Text style={[styles.progressValue, { color: colors.text }]}>{Math.round(currentProgress * 100)}% completado</Text>
             </View>
-            
+
             <TouchableOpacity
               onPress={() => {
                 onClose(); // Cerramos este modal antes de abrir el Alert de confirmación

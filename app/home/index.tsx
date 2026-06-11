@@ -395,7 +395,7 @@ export default function LibraryScreen() {
           <TouchableOpacity style={styles.headerActionButton}>
             <Ionicons name="search-sharp" size={30} color={colors.text} />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.headerActionButton}>
+          <TouchableOpacity style={styles.headerActionButton} onPress={() => router.push('/home/theme')}>
             <Ionicons name="settings-sharp" size={28} color={colors.text} />
           </TouchableOpacity>
         </View>

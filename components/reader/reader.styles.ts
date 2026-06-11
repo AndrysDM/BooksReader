@@ -228,6 +228,12 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     fontStyle: 'italic',
   },
+  circle: {
+  width: 40,
+  height: 40,
+  borderRadius: 20,
+  borderWidth: 2,
+},
 });
 
 export default styles;
