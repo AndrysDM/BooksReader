@@ -8,7 +8,8 @@ export default function RootLayout() {
     <ThemeProvider>
       <LibraryProvider>
         <Stack screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="home/index"  options={{ presentation: 'fullScreenModal' }} />
+          <Stack.Screen name="index"  options={{ presentation: 'fullScreenModal' }} />
+          <Stack.Screen name="settings/index"  options={{ presentation: 'fullScreenModal' }} />
           <Stack.Screen name="reader/index" options={{ presentation: 'fullScreenModal' }} />
         </Stack>
       </LibraryProvider>

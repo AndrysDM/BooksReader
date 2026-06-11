@@ -8,11 +8,11 @@ import { useNavigation, useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Modal, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { WebView } from 'react-native-webview';
-import { useLibrary } from '../../context/LibraryContext';
-import { useTheme } from '../../context/ThemeContext';
-import { fileHandler } from '../../utils/storage';
-import { saveBookCache } from '../../utils/storage/queries/locations';
-import { Book } from '../../utils/storage/types';
+import { useLibrary } from '../context/LibraryContext';
+import { useTheme } from '../context/ThemeContext';
+import { fileHandler } from '../utils/storage';
+import { saveBookCache } from '../utils/storage/queries/locations';
+import { Book } from '../utils/storage/types';
 
 const extractorHtml = `
 <!DOCTYPE html>
@@ -395,7 +395,7 @@ export default function LibraryScreen() {
           <TouchableOpacity style={styles.headerActionButton}>
             <Ionicons name="search-sharp" size={30} color={colors.text} />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.headerActionButton} onPress={() => router.push('/home/theme')}>
+          <TouchableOpacity style={styles.headerActionButton} onPress={() => router.push('/settings')}>
             <Ionicons name="settings-sharp" size={28} color={colors.text} />
           </TouchableOpacity>
         </View>
